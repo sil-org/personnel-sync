@@ -10,7 +10,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 
-	"github.com/silinternational/personnel-sync/v6/internal"
+	"github.com/sil-org/personnel-sync/v6/internal"
 )
 
 const DefaultSheetName = "Sheet1"

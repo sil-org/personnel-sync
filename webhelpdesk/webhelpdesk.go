@@ -12,13 +12,15 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/silinternational/personnel-sync/v6/internal"
+	"github.com/sil-org/personnel-sync/v6/internal"
 )
 
-const DefaultBatchSize = 50
-const DefaultBatchDelaySeconds = 60
-const DefaultListClientsPageLimit = 100
-const ClientsAPIPath = "/ra/Clients"
+const (
+	DefaultBatchSize            = 50
+	DefaultBatchDelaySeconds    = 60
+	DefaultListClientsPageLimit = 100
+	ClientsAPIPath              = "/ra/Clients"
+)
 
 // In WebHelpDesk the basic user is called a "Client", so this is not an API Client
 type User struct {
@@ -117,8 +119,8 @@ func (w *WebHelpDesk) ListUsers(desiredAttrs []string) ([]internal.Person, error
 
 func (w *WebHelpDesk) ApplyChangeSet(
 	changes internal.ChangeSet,
-	eventLog chan<- internal.EventLogItem) internal.ChangeResults {
-
+	eventLog chan<- internal.EventLogItem,
+) internal.ChangeResults {
 	var results internal.ChangeResults
 	var wg sync.WaitGroup
 
@@ -148,15 +150,16 @@ func (w *WebHelpDesk) CreateUser(
 	person internal.Person,
 	counter *uint64,
 	wg *sync.WaitGroup,
-	eventLog chan<- internal.EventLogItem) {
-
+	eventLog chan<- internal.EventLogItem,
+) {
 	defer wg.Done()
 
 	newClient, err := getWebHelpDeskClientFromPerson(person)
 	if err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ERR,
-			Message: fmt.Sprintf("unable to create user, unable to convert string to int, error: %s", err.Error())}
+			Message: fmt.Sprintf("unable to create user, unable to convert string to int, error: %s", err.Error()),
+		}
 		return
 	}
 
@@ -164,7 +167,8 @@ func (w *WebHelpDesk) CreateUser(
 	if err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ERR,
-			Message: fmt.Sprintf("unable to create user, unable to marshal json, error: %s", err.Error())}
+			Message: fmt.Sprintf("unable to create user, unable to marshal json, error: %s", err.Error()),
+		}
 		return
 	}
 
@@ -174,7 +178,8 @@ func (w *WebHelpDesk) CreateUser(
 		eventLog <- internal.EventLogItem{
 			Level: syslog.LOG_ERR,
 			Message: fmt.Sprintf("unable to create user (person=%v, client=%v), error calling api: %s",
-				person, newClient, err.Error())}
+				person, newClient, err.Error()),
+		}
 		return
 	}
 
@@ -190,15 +195,16 @@ func (w *WebHelpDesk) UpdateUser(
 	person internal.Person,
 	counter *uint64,
 	wg *sync.WaitGroup,
-	eventLog chan<- internal.EventLogItem) {
-
+	eventLog chan<- internal.EventLogItem,
+) {
 	defer wg.Done()
 
 	newClient, err := getWebHelpDeskClientFromPerson(person)
 	if err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ERR,
-			Message: fmt.Sprintf("unable to update user, unable to convert string to int, error: %s", err.Error())}
+			Message: fmt.Sprintf("unable to update user, unable to convert string to int, error: %s", err.Error()),
+		}
 		return
 	}
 
@@ -206,7 +212,8 @@ func (w *WebHelpDesk) UpdateUser(
 	if err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ERR,
-			Message: fmt.Sprintf("unable to update user, unable to marshal json, error: %s", err.Error())}
+			Message: fmt.Sprintf("unable to update user, unable to marshal json, error: %s", err.Error()),
+		}
 		return
 	}
 
@@ -217,7 +224,8 @@ func (w *WebHelpDesk) UpdateUser(
 		eventLog <- internal.EventLogItem{
 			Level: syslog.LOG_ERR,
 			Message: fmt.Sprintf("unable to update user (person=%+v, client=%+v), error calling api, error: %s",
-				person, newClient, err.Error())}
+				person, newClient, err.Error()),
+		}
 		return
 	}
 

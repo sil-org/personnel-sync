@@ -1,9 +1,11 @@
 package restapi
 
-import "github.com/silinternational/personnel-sync/v6/internal"
+import "github.com/sil-org/personnel-sync/v6/internal"
 
-const DefaultHttpTimeoutSeconds = 45
-const httpTimeoutEnv = "HTTP_TIMEOUT_SECONDS"
+const (
+	DefaultHttpTimeoutSeconds = 45
+	httpTimeoutEnv            = "HTTP_TIMEOUT_SECONDS"
+)
 
 type RestAPI struct {
 	ListMethod           string

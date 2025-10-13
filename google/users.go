@@ -11,7 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/silinternational/personnel-sync/v6/internal"
+	"github.com/sil-org/personnel-sync/v6/internal"
 
 	"golang.org/x/net/context"
 	admin "google.golang.org/api/admin/directory/v1"

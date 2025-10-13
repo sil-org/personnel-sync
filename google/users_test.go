@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/googleapi"
 
-	"github.com/silinternational/personnel-sync/v6/internal"
+	"github.com/sil-org/personnel-sync/v6/internal"
 
 	admin "google.golang.org/api/admin/directory/v1"
 )

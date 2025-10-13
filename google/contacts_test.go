@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/silinternational/personnel-sync/v6/internal"
+	"github.com/sil-org/personnel-sync/v6/internal"
 )
 
 func TestNewGoogleContactsDestination(t *testing.T) {
@@ -474,5 +474,4 @@ func TestGoogleContacts_getPhonesFromAttributes(t *testing.T) {
 			}
 		})
 	}
-
 }
