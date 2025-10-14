@@ -11,7 +11,7 @@ import (
 	"github.com/Jeffail/gabs/v2"
 	"github.com/stretchr/testify/require"
 
-	"github.com/silinternational/personnel-sync/v6/internal"
+	"github.com/sil-org/personnel-sync/v6/internal"
 )
 
 func TestRestAPI_ForSet(t *testing.T) {
@@ -705,7 +705,6 @@ func Test_parsePathTemplate(t *testing.T) {
 }
 
 func TestRestAPI_listUsersForPathWithPagination(t *testing.T) {
-
 	users := []MockUser{
 		{ID: 0, Name: "u0"},
 		{ID: 1, Name: "u1"},
