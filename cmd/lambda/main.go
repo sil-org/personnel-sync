@@ -31,6 +31,7 @@ func handler(lambdaConfig LambdaConfig) error {
 func initSentry(dsn string) {
 	err := sentry.Init(sentry.ClientOptions{
 		Dsn:         dsn,
+		EnableLogs:  true,
 		Environment: getEnv("APP_ENV", "production"),
 	})
 	if err != nil {
