@@ -8,6 +8,7 @@ bin
 *.env
 *.aes
 config*.json
+!config.example.json
 
 # dev tools metadata
 .idea/

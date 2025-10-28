@@ -2,9 +2,8 @@
 *
 
 # Whitelist required files
-!.env.encrypted
 !build.sh
+!cdk*.json
 !config.json
 !go.*
 !*.go
-!serverless.yml

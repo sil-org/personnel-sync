@@ -7,4 +7,5 @@ set -e
 set -x
 
 # Build all the things
-go build -ldflags="-s -w" -o bin/bootstrap personnelsync.go
+go build -C src -ldflags="-s -w" -o bin/bootstrap personnelsync.go
+cp src/*.json src/bin
