@@ -1,0 +1,57 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: ["**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: "src/go.mod"
+          cache-dependency-path: |
+            src/go.sum
+            cdk/go.sum
+
+      - name: Unit tests
+        run: go test -C src -v
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    if: github.ref_name == 'main'
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install AWS CDK
+        run: npm install -g aws-cdk
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Deploy
+        env:
+          STAGE: production
+        run: cd cdk && cdk deploy --require-approval never
