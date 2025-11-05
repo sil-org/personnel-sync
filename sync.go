@@ -13,6 +13,8 @@ import (
 	"github.com/sil-org/personnel-sync/v6/internal"
 	"github.com/sil-org/personnel-sync/v6/restapi"
 	"github.com/sil-org/personnel-sync/v6/webhelpdesk"
+
+	"github.com/getsentry/sentry-go"
 )
 
 func RunSync(configFile string) error {
@@ -35,6 +37,10 @@ func RunSync(configFile string) error {
 		return nil
 	}
 
+	if config.Runtime.SentryDSN != "" {
+		initSentry(config.Runtime.SentryDSN, config.Runtime.Environment)
+	}
+
 	// Instantiate Source
 	var source internal.Source
 	switch config.Source.Type {
@@ -47,9 +53,10 @@ func RunSync(configFile string) error {
 	}
 
 	if err != nil {
-		msg := fmt.Sprintf("Unable to initialize %s source, error: %s", config.Source.Type, err)
-		log.Println(msg)
-		alert.SendEmail(config.Alert, msg)
+		msg := fmt.Errorf("Unable to initialize %s source, error: %w", config.Source.Type, err)
+		sentry.CaptureException(msg)
+		log.Println(msg.Error())
+		alert.SendEmail(config.Alert, msg.Error())
 		return nil
 	}
 
@@ -73,9 +80,10 @@ func RunSync(configFile string) error {
 	}
 
 	if err != nil {
-		msg := fmt.Sprintf("Unable to initialize %s destination, error: %s", config.Destination.Type, err)
+		msg := fmt.Errorf("Unable to initialize %s destination, error: %w", config.Destination.Type, err)
+		sentry.CaptureException(msg)
 		log.Println(msg)
-		alert.SendEmail(config.Alert, msg)
+		alert.SendEmail(config.Alert, msg.Error())
 		return nil
 	}
 
@@ -123,10 +131,21 @@ func RunSync(configFile string) error {
 
 func handleSyncError(logger *log.Logger, err error, alertList []string) []string {
 	logger.Println(err)
+	sentry.CaptureException(err)
 
 	var syncError internal.SyncError
 	if isSyncError := errors.As(err, &syncError); !isSyncError || syncError.SendAlert {
 		alertList = append(alertList, err.Error())
 	}
 	return alertList
+}
+
+func initSentry(dsn, env string) {
+	err := sentry.Init(sentry.ClientOptions{
+		Dsn:         dsn,
+		Environment: env,
+	})
+	if err != nil {
+		log.Printf("sentry.Init failure: %s", err)
+	}
 }

@@ -34,8 +34,10 @@ const (
 )
 
 type RuntimeConfig struct {
-	DryRunMode bool
-	Verbosity  int
+	DryRunMode  bool
+	SentryDSN   string
+	Environment string
+	Verbosity   int
 }
 
 type SyncSet struct {
