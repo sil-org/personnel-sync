@@ -1,9 +1,9 @@
 {
   "Runtime": {
     "DryRunMode": false,
-    "Verbosity": 1,
+    "Environment": "production",
     "SentryDSN": "",
-    "Environment": "production"
+    "Verbosity": 1
   },
   "Source": {
     "Type": "RestAPI",

@@ -35,8 +35,8 @@ const (
 
 type RuntimeConfig struct {
 	DryRunMode  bool
-	SentryDSN   string
 	Environment string
+	SentryDSN   string
 	Verbosity   int
 }
 
