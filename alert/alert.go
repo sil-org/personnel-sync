@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/aws/aws-sdk-go-v2/service/ses/types"
+	"github.com/getsentry/sentry-go"
 )
 
 type Config struct {
@@ -21,6 +22,11 @@ type Config struct {
 	RecipientEmails    []string
 	AWSAccessKeyID     string
 	AWSSecretAccessKey string
+}
+
+func New(config Config, err error) {
+	sentry.CaptureException(err)
+	SendEmail(config, err.Error())
 }
 
 func SendEmail(config Config, body string) {
