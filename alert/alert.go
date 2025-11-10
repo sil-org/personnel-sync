@@ -24,12 +24,16 @@ type Config struct {
 	AWSSecretAccessKey string
 }
 
+// New sends an alert to both Sentry and configured emails via SES
 func New(config Config, err error) {
 	sentry.CaptureException(err)
-	sendEmail(config, err.Error())
+	SendEmail(config, err.Error())
 }
 
-func sendEmail(config Config, body string) {
+// SendEmail sends a SES email to the recipients found in the Config.
+//
+// Consider using `alert.New` instead, to send alerts to both Sentry and Email
+func SendEmail(config Config, body string) {
 	charSet := config.CharSet
 
 	subject := config.SubjectText
