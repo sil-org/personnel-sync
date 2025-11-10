@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/aws/aws-sdk-go-v2/service/ses/types"
+	"github.com/getsentry/sentry-go"
 )
 
 type Config struct {
@@ -23,6 +24,15 @@ type Config struct {
 	AWSSecretAccessKey string
 }
 
+// New sends an alert to both Sentry and configured emails via SES
+func New(config Config, err error) {
+	sentry.CaptureException(err)
+	SendEmail(config, err.Error())
+}
+
+// SendEmail sends a SES email to the recipients found in the Config.
+//
+// Consider using `alert.New` instead, to send alerts to both Sentry and Email
 func SendEmail(config Config, body string) {
 	charSet := config.CharSet
 

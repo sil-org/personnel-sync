@@ -34,8 +34,10 @@ const (
 )
 
 type RuntimeConfig struct {
-	DryRunMode bool
-	Verbosity  int
+	DryRunMode  bool
+	Environment string
+	SentryDSN   string
+	Verbosity   int
 }
 
 type SyncSet struct {
@@ -63,6 +65,10 @@ type EventLogItem struct {
 }
 
 func (l EventLogItem) String() string {
+	return LogLevels[l.Level] + ": " + l.Message
+}
+
+func (l EventLogItem) Error() string {
 	return LogLevels[l.Level] + ": " + l.Message
 }
 

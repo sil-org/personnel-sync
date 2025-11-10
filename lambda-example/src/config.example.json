@@ -1,6 +1,8 @@
 {
   "Runtime": {
     "DryRunMode": false,
+    "Environment": "production",
+    "SentryDSN": "",
     "Verbosity": 1
   },
   "Source": {

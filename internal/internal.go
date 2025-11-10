@@ -164,10 +164,10 @@ func processExpressions(logger *log.Logger, config Config, person Person) Person
 
 		re, err := regexp.Compile(attr.Expression)
 		if err != nil {
-			msg := fmt.Sprintf("invalid regular expression (%q) on attribute %s",
+			msg := fmt.Errorf("invalid regular expression (%q) on attribute %s",
 				attr.Expression, attrName)
 			logger.Println(msg)
-			alert.SendEmail(config.Alert, msg)
+			alert.New(config.Alert, msg)
 			continue
 		}
 
@@ -263,7 +263,7 @@ func processEventLog(logger *log.Logger, config alert.Config, eventLog <-chan Ev
 	for msg := range eventLog {
 		logger.Println(msg)
 		if msg.Level == syslog.LOG_ALERT || msg.Level == syslog.LOG_EMERG {
-			alert.SendEmail(config, msg.String())
+			alert.New(config, msg)
 		}
 	}
 }

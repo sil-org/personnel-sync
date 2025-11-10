@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/sil-org/personnel-sync/v6/alert"
@@ -13,6 +12,8 @@ import (
 	"github.com/sil-org/personnel-sync/v6/internal"
 	"github.com/sil-org/personnel-sync/v6/restapi"
 	"github.com/sil-org/personnel-sync/v6/webhelpdesk"
+
+	"github.com/getsentry/sentry-go"
 )
 
 func RunSync(configFile string) error {
@@ -29,10 +30,14 @@ func RunSync(configFile string) error {
 
 	config, err := internal.ReadConfig(rawConfig)
 	if err != nil {
-		msg := fmt.Sprintf("Unable to read config, error: %s", err)
+		msg := fmt.Errorf("Unable to read config, error: %w", err)
 		log.Println(msg)
-		alert.SendEmail(config.Alert, msg)
+		alert.New(config.Alert, msg)
 		return nil
+	}
+
+	if config.Runtime.SentryDSN != "" {
+		initSentry(config.Runtime.SentryDSN, config.Runtime.Environment)
 	}
 
 	// Instantiate Source
@@ -47,9 +52,9 @@ func RunSync(configFile string) error {
 	}
 
 	if err != nil {
-		msg := fmt.Sprintf("Unable to initialize %s source, error: %s", config.Source.Type, err)
-		log.Println(msg)
-		alert.SendEmail(config.Alert, msg)
+		msg := fmt.Errorf("Unable to initialize %s source, error: %w", config.Source.Type, err)
+		log.Println(msg.Error())
+		alert.New(config.Alert, msg)
 		return nil
 	}
 
@@ -73,14 +78,14 @@ func RunSync(configFile string) error {
 	}
 
 	if err != nil {
-		msg := fmt.Sprintf("Unable to initialize %s destination, error: %s", config.Destination.Type, err)
+		msg := fmt.Errorf("Unable to initialize %s destination, error: %w", config.Destination.Type, err)
 		log.Println(msg)
-		alert.SendEmail(config.Alert, msg)
+		alert.New(config.Alert, msg)
 		return nil
 	}
 
 	maxNameLength := config.MaxSyncSetNameLength()
-	var alertList []string
+	var alertError error
 
 	// Iterate through SyncSets and process changes
 	for i, syncSet := range config.SyncSets {
@@ -89,8 +94,8 @@ func RunSync(configFile string) error {
 		}
 
 		if syncSet.Name == "" {
-			msg := "configuration contains a set with no name"
-			alertList = append(alertList, msg)
+			err := errors.New("configuration contains a set with no name")
+			alertError = errors.Join(alertError, err)
 		}
 		prefix := fmt.Sprintf("[ %-*s ] ", maxNameLength, syncSet.Name)
 		syncSetLogger := log.New(os.Stdout, prefix, 0)
@@ -99,34 +104,45 @@ func RunSync(configFile string) error {
 		// Apply SyncSet configs (excluding source/destination as appropriate)
 		if err = source.ForSet(syncSet.Source); err != nil {
 			err = fmt.Errorf(`Error setting source set on syncSet "%s": %w`, syncSet.Name, err)
-			alertList = handleSyncError(syncSetLogger, err, alertList)
+			alertError = handleSyncError(syncSetLogger, err, alertError)
 		}
 
 		if err = destination.ForSet(syncSet.Destination); err != nil {
 			err = fmt.Errorf(`Error setting destination set on syncSet "%s": %w`, syncSet.Name, err)
-			alertList = handleSyncError(syncSetLogger, err, alertList)
+			alertError = handleSyncError(syncSetLogger, err, alertError)
 		}
 
 		if err = internal.RunSyncSet(syncSetLogger, source, destination, config); err != nil {
 			err = fmt.Errorf(`Sync failed with error on syncSet "%s": %w`, syncSet.Name, err)
-			alertList = handleSyncError(syncSetLogger, err, alertList)
+			alertError = handleSyncError(syncSetLogger, err, alertError)
 		}
 	}
 
-	if len(alertList) > 0 {
-		alert.SendEmail(config.Alert, fmt.Sprintf("Sync error(s):\n%s", strings.Join(alertList, "\n")))
+	if alertError != nil {
+		alertError = errors.Join(errors.New("Sync error(s):"), alertError)
+		alert.New(config.Alert, alertError)
 	}
 
 	log.Printf("Personnel sync completed at %s", time.Now().UTC().Format(time.RFC1123Z))
 	return nil
 }
 
-func handleSyncError(logger *log.Logger, err error, alertList []string) []string {
+func handleSyncError(logger *log.Logger, err, alert error) error {
 	logger.Println(err)
 
 	var syncError internal.SyncError
 	if isSyncError := errors.As(err, &syncError); !isSyncError || syncError.SendAlert {
-		alertList = append(alertList, err.Error())
+		alert = errors.Join(alert, err)
 	}
-	return alertList
+	return alert
+}
+
+func initSentry(dsn, env string) {
+	err := sentry.Init(sentry.ClientOptions{
+		Dsn:         dsn,
+		Environment: env,
+	})
+	if err != nil {
+		log.Printf("sentry.Init failure: %s", err)
+	}
 }

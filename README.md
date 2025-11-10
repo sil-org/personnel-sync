@@ -57,6 +57,10 @@ provider:
 Both authentication mechanisms are provided in the `lambda-example` directory,
 but only one is needed.
 
+## Sentry
+
+Sentry can be added by adding the Sentry DSN into `Runtime` > `SentryDSN`. This can be obtained from the project settings in Sentry. The `Runtime` > `Environment` can also be set to specify the environment, such as `production`, `staging`, or `development`.
+
 ## Pagination
 
 ### `RestAPI`
