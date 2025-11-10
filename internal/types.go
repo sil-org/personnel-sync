@@ -68,6 +68,10 @@ func (l EventLogItem) String() string {
 	return LogLevels[l.Level] + ": " + l.Message
 }
 
+func (l EventLogItem) Error() string {
+	return LogLevels[l.Level] + ": " + l.Message
+}
+
 var LogLevels = map[syslog.Priority]string{
 	syslog.LOG_EMERG:   "Emerg",
 	syslog.LOG_ALERT:   "Alert",

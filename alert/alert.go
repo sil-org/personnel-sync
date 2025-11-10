@@ -26,10 +26,10 @@ type Config struct {
 
 func New(config Config, err error) {
 	sentry.CaptureException(err)
-	SendEmail(config, err.Error())
+	sendEmail(config, err.Error())
 }
 
-func SendEmail(config Config, body string) {
+func sendEmail(config Config, body string) {
 	charSet := config.CharSet
 
 	subject := config.SubjectText

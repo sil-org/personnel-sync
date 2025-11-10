@@ -32,7 +32,6 @@ func RunSync(configFile string) error {
 	if err != nil {
 		msg := fmt.Sprintf("Unable to read config, error: %s", err)
 		log.Println(msg)
-		alert.SendEmail(config.Alert, msg)
 		return nil
 	}
 
