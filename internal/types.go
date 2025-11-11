@@ -37,6 +37,7 @@ type RuntimeConfig struct {
 	DryRunMode  bool
 	Environment string
 	SentryDSN   string
+	SentryTags  map[string]string
 	Verbosity   int
 }
 
