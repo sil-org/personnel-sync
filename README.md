@@ -59,7 +59,13 @@ but only one is needed.
 
 ## Sentry
 
-Sentry can be added by adding the Sentry DSN into `Runtime` > `SentryDSN`. This can be obtained from the project settings in Sentry. The `Runtime` > `Environment` can also be set to specify the environment, such as `production`, `staging`, or `development`.
+Sentry can be added by adding the Sentry DSN into `Runtime` > `SentryDSN`. This can be obtained from the project settings in Sentry. The `Runtime` > `Environment` can also be set to specify the environment, such as `production`, `staging`, or `development`. Tags can also be added by setting the `Tags` object. For example, the following will add a `sync` tag set to `example` for each Sentry error:
+
+```
+    "SentryTags": {
+      "sync": "example"
+    },
+```
 
 ## Pagination
 

@@ -37,7 +37,7 @@ func RunSync(configFile string) error {
 	}
 
 	if config.Runtime.SentryDSN != "" {
-		initSentry(config.Runtime.SentryDSN, config.Runtime.Environment)
+		initSentry(config.Runtime)
 	}
 
 	// Instantiate Source
@@ -137,10 +137,11 @@ func handleSyncError(logger *log.Logger, err, alert error) error {
 	return alert
 }
 
-func initSentry(dsn, env string) {
+func initSentry(config internal.RuntimeConfig) {
 	err := sentry.Init(sentry.ClientOptions{
-		Dsn:         dsn,
-		Environment: env,
+		Dsn:         config.SentryDSN,
+		Environment: config.Environment,
+		Tags:        config.SentryTags,
 	})
 	if err != nil {
 		log.Printf("sentry.Init failure: %s", err)

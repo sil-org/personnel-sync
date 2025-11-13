@@ -3,6 +3,9 @@
     "DryRunMode": false,
     "Environment": "production",
     "SentryDSN": "",
+    "SentryTags": {
+      "sync": "example"
+    },
     "Verbosity": 1
   },
   "Source": {
