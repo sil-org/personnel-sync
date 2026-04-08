@@ -1,6 +1,6 @@
 module github.com/sil-org/personnel-sync/v6
 
-go 1.25
+go 1.25.9
 
 require (
 	github.com/Jeffail/gabs/v2 v2.7.0
