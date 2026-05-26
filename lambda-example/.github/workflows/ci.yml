@@ -43,10 +43,10 @@ jobs:
         run: npm install -g aws-cdk
 
       - uses: aws-actions/configure-aws-credentials@v6
+        id: configure-aws
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_CD_ROLE_ARN }}
 
       - name: Build
         run: ./build.sh
