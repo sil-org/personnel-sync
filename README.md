@@ -547,9 +547,6 @@ of the destination configuration required for Google Groups:
       },
       "Destination": {
           "GroupEmail": "group1@groups.domain.com",
-          "Owners": ["person_a@domain.com","person_b@domain.com"],
-          "Managers": ["another_person@domain.com", "yet-another-person@domain.com"],
-          "ExtraOwners": ["google-admin@domain.com"],
           "DisableAdd": false,
           "DisableUpdate": false,
           "DisableDelete": false

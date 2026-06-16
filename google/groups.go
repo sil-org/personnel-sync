@@ -20,8 +20,6 @@ import (
 
 const (
 	RoleMember  = "MEMBER"
-	RoleOwner   = "OWNER"
-	RoleManager = "MANAGER"
 )
 
 type GoogleGroups struct {
@@ -35,10 +33,6 @@ type GoogleGroups struct {
 
 type GroupSyncSet struct {
 	GroupEmail    string
-	Owners        []string
-	ExtraOwners   []string
-	Managers      []string
-	ExtraManagers []string
 	ExtraMembers  []string
 	DisableAdd    bool
 	DisableUpdate bool
@@ -112,10 +106,8 @@ func (g *GoogleGroups) ListUsers(desiredAttrs []string) ([]internal.Person, erro
 	var members []internal.Person
 
 	for _, nextMember := range membersList {
-		// Do not include ExtraManager, ExtraOwners, or ExtraMember in list to prevent inclusion in delete list
-		if slices.Contains(g.GroupSyncSet.ExtraManagers, nextMember.Email) ||
-			slices.Contains(g.GroupSyncSet.ExtraOwners, nextMember.Email) ||
-			slices.Contains(g.GroupSyncSet.ExtraMembers, nextMember.Email) {
+		// Do not include ExtraMembers in list to prevent inclusion in delete list
+		if slices.Contains(g.GroupSyncSet.ExtraMembers, nextMember.Email) {
 			continue
 		}
 
@@ -143,25 +135,7 @@ func (g *GoogleGroups) ApplyChangeSet(
 		toBeCreated[person.CompareValue] = RoleMember
 	}
 
-	// Update Owner / Manager roles
-	for _, owner := range g.GroupSyncSet.Owners {
-		if _, ok := toBeCreated[owner]; ok {
-			toBeCreated[owner] = RoleOwner
-		}
-	}
-	for _, manager := range g.GroupSyncSet.Managers {
-		if _, ok := toBeCreated[manager]; ok {
-			toBeCreated[manager] = RoleManager
-		}
-	}
-
-	// Add any ExtraManagers, ExtraOwners, and ExtraMembers to Create list since they are not in the source people
-	for _, manager := range g.GroupSyncSet.ExtraManagers {
-		toBeCreated[manager] = RoleManager
-	}
-	for _, owner := range g.GroupSyncSet.ExtraOwners {
-		toBeCreated[owner] = RoleOwner
-	}
+	// Add any ExtraMembers to Create list since they are not in the source people
 	for _, member := range g.GroupSyncSet.ExtraMembers {
 		toBeCreated[member] = RoleMember
 	}
@@ -179,10 +153,8 @@ func (g *GoogleGroups) ApplyChangeSet(
 
 	if !g.GroupSyncSet.DisableDelete {
 		for _, dp := range changes.Delete {
-			// Do not delete ExtraManagers, ExtraOwners, or ExtraMembers
-			if slices.Contains(g.GroupSyncSet.ExtraManagers, dp.CompareValue) ||
-				slices.Contains(g.GroupSyncSet.ExtraOwners, dp.CompareValue) ||
-				slices.Contains(g.GroupSyncSet.ExtraMembers, dp.CompareValue) {
+			// Do not delete ExtraMembers
+			if slices.Contains(g.GroupSyncSet.ExtraMembers, dp.CompareValue) {
 				continue
 			}
 			wg.Add(1)
