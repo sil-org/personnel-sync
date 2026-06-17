@@ -1,16 +1,17 @@
 # Personnel Sync
-This application is intended to provide a fairly easy to use way of synchronizing people from a personnel system 
-to some other system. In this application there are data _sources_ and _destinations_. Since _destinations_ have their 
-own unique APIs and integration methods each _destination_ is developed individually to implement the _Destination_ 
-interface. The runtime for this application is configured using a `config.json` file. An example is provided named 
-`config.example.json`, however it only has the `GoogleGroups` destination in it so other supported destinations are 
-documented below. 
+
+This application is intended to provide a fairly easy to use way of synchronizing people from a personnel system
+to some other system. In this application there are data _sources_ and _destinations_. Since _destinations_ have their
+own unique APIs and integration methods each _destination_ is developed individually to implement the _Destination_
+interface. The runtime for this application is configured using a `config.json` file. An example is provided named
+`config.example.json`, however it only has the `GoogleGroups` destination in it so other supported destinations are
+documented below.
 
 ## REST API HTTP Timeout
 
-The default timeout for HTTP requests to REST APIs is 45 seconds. It is possible to override 
-the default value via an environment variable named `HTTP_TIMEOUT_SECONDS`, the value of 
-which must be an integer between 1 and 600 inclusive. 
+The default timeout for HTTP requests to REST APIs is 45 seconds. It is possible to override
+the default value via an environment variable named `HTTP_TIMEOUT_SECONDS`, the value of
+which must be an integer between 1 and 600 inclusive.
 
 Alternatively, you can override the default value and the environment variable value by adding
 an `HttpTimeoutSeconds` entry in the `ExtraJSON` entry of your `Source`/`Destination` config entry.
@@ -33,9 +34,7 @@ The following is an example configuration:
     "CharSet": "UTF-8",
     "ReturnToAddr": "no-reply@example.org",
     "SubjectText": "personnel-sync alert",
-    "RecipientEmails": [
-      "admin@example.org"
-    ],
+    "RecipientEmails": ["admin@example.org"],
     "AWSAccessKeyID": "ABCD1234",
     "AWSSecretAccessKey": "abcd1234!@#$"
   }
@@ -74,6 +73,7 @@ Sentry can be added by adding the Sentry DSN into `Runtime` > `SentryDSN`. This 
 The RestAPI adapter supports pagination as both a source and as a destination.
 
 #### Properties:
+
 - Scheme -- if specified, must be "pages" for page based or "items" for item based
 - FirstIndex -- index of first item/page to fetch, default is 1
 - NumberKey -- query string key for the item index or page number
@@ -83,7 +83,7 @@ The RestAPI adapter supports pagination as both a source and as a destination.
 
 #### Example config
 
-Following is an example configuration for Pagination. Unrelated parameters have 
+Following is an example configuration for Pagination. Unrelated parameters have
 been omitted for simplicity.
 
 ```json
@@ -118,6 +118,7 @@ data. If the value of an attribute configured in a filter is empty or null, the
 record is not included in the output data.
 
 #### Properties
+
 - Attribute -- The name of the attribute to filter on. Does not need to be listed in the sync attributes.
 - Expression -- A text expression for which to search. Uses RE2 regular expression syntax.
 - Exclude -- If true, records matching the expression are excluded.
@@ -151,9 +152,11 @@ been omitted for simplicity.
 ## Sources
 
 ### REST API
+
 Data sources coming from simple API calls can use the `RestAPI` source. Here are some examples of how to configure it:
 
 #### Basic Authentication
+
 ```json
 {
   "Source": {
@@ -176,9 +179,9 @@ Data sources coming from simple API calls can use the `RestAPI` source. Here are
         "Paths": ["/users"]
       },
       "Destination": {
-          "DisableAdd": false,
-          "DisableUpdate": false,
-          "DisableDelete": false
+        "DisableAdd": false,
+        "DisableUpdate": false,
+        "DisableDelete": false
       }
     }
   ]
@@ -186,6 +189,7 @@ Data sources coming from simple API calls can use the `RestAPI` source. Here are
 ```
 
 #### Bearer Token Authentication
+
 ```json
 {
   "Source": {
@@ -202,19 +206,20 @@ Data sources coming from simple API calls can use the `RestAPI` source. Here are
   }
 }
 ```
+
 `SyncSets` is configured the same as for basic authentication.
 
 #### Salesforce OAuth Authentication
 
 In Salesforce Setup, choose "App Manager", and add a new app. Tick the "Enable OAuth Settings"
 box and enter https://login.salesforce.com/services/oauth2/callback in the Callback URL. Add any
-required Scopes, such as "Manage user data via APIs (api)". 
+required Scopes, such as "Manage user data via APIs (api)".
 
 Once the app has been created, from App Manager, choose View from the context menu of the new app.
-Copy the Consumer Key and paste it in the config.json `Source.ExtraJSON.ClientID` and copy the 
+Copy the Consumer Key and paste it in the config.json `Source.ExtraJSON.ClientID` and copy the
 Consumer Secret and paste it in the Client Secret json property.
 
-If you don't already have a Security Token, go to User Settings, My Personal Information, 
+If you don't already have a Security Token, go to User Settings, My Personal Information,
 Reset My Security Token. Add your username in the config.json Username property, and your password
 concatenated with your Security Token in the Password property.
 
@@ -241,12 +246,14 @@ If using a Sandbox org, change the config.json BaseURL property to https://test.
     {
       "Name": "Sync from Salesforce to Xyz API",
       "Source": {
-        "Paths": ["/services/data/v20.0/query/?q=SELECT%20Email,FirstName,LastName%20FROM%20Contact"]
+        "Paths": [
+          "/services/data/v20.0/query/?q=SELECT%20Email,FirstName,LastName%20FROM%20Contact"
+        ]
       },
       "Destination": {
-          "DisableAdd": false,
-          "DisableUpdate": false,
-          "DisableDelete": false
+        "DisableAdd": false,
+        "DisableUpdate": false,
+        "DisableDelete": false
       }
     }
   ]
@@ -256,12 +263,14 @@ If using a Sandbox org, change the config.json BaseURL property to https://test.
 `SyncSets` is configured the same as for basic authentication.
 
 ### Google Sheets
-The Google Sheets source reads records in rows from a Sheets document, where 
+
+The Google Sheets source reads records in rows from a Sheets document, where
 the first row contains field names.
 
 If not specified in the configuration, the sheet name is "Sheet1"
 
 Example config:
+
 ```json
 {
   "Source": {
@@ -279,7 +288,7 @@ Example config:
         "token_uri": "https://oauth2.googleapis.com/token",
         "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
         "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/my-sync-bot%40abc-theme-123456.iam.gserviceaccount.com"
-      }            
+      }
     }
   },
   "AttributeMap": [
@@ -301,9 +310,9 @@ Example config:
         "CompareAttribute": "employee_id"
       },
       "Destination": {
-          "DisableAdd": false,
-          "DisableUpdate": false,
-          "DisableDelete": false
+        "DisableAdd": false,
+        "DisableUpdate": false,
+        "DisableDelete": false
       }
     }
   ]
@@ -313,6 +322,7 @@ Example config:
 ## Destinations
 
 ### REST API
+
 Destinations conforming to a simple REST API can use the `RestAPI` destination.
 Authentication is the same as for a REST API source, except that Salesforce
 OAuth is not supported.
@@ -320,6 +330,7 @@ OAuth is not supported.
 Here are some examples of how to configure it:
 
 #### Basic Authentication
+
 ```json
 {
   "Destination": {
@@ -340,6 +351,7 @@ Here are some examples of how to configure it:
 ```
 
 #### Bearer Token Authentication
+
 ```json
 {
   "Destination": {
@@ -362,7 +374,7 @@ Here are some examples of how to configure it:
     {
       "Name": "Sync from personnel to REST API",
       "Source": {
-          "Paths": ["/user-report"]
+        "Paths": ["/user-report"]
       },
       "Destination": {
         "Paths": ["/users"],
@@ -376,20 +388,21 @@ Here are some examples of how to configure it:
 ```
 
 ### Google Contacts
+
 This destination can create, update, and delete Contact records in the Google
 Shared Contacts list.
 
 The compare attribute is `email`. A limited subset of contact properties are
-available to be updated. __WARNING:__ On update, all properties are modified even
+available to be updated. **WARNING:** On update, all properties are modified even
 if absent from the configuration. Omitted properties are set to empty. One
-exception is `fullName` which is filled in by Google with 
+exception is `fullName` which is filled in by Google with
 `givenName` + `familyName`
 
 | property       | Google property                |
-|----------------|--------------------------------|
-| id             | id                             | 
+| -------------- | ------------------------------ |
+| id             | id                             |
 | email          | email.address                  |
-| phoneNumber    | phoneNumber.text               | 
+| phoneNumber    | phoneNumber.text               |
 | familyName     | name.familyName                |
 | givenName      | name.givenName                 |
 | fullName       | name.fullName                  |
@@ -400,7 +413,7 @@ exception is `fullName` which is filled in by Google with
 | where          | where.valueString              |
 | notes          | content                        |
 
-`phoneNumber` can be extended by adding a Google `rel` or a label to the 
+`phoneNumber` can be extended by adding a Google `rel` or a label to the
 property name in the config.json AttributeMap. For example:
 `phoneNumber,http://schemas.google.com/g/2005#work` or
 `phoneNumber,Personal Phone`. If neither are supplied, the "work" rel will be
@@ -434,7 +447,7 @@ Contacts:
         "token_uri": "https://oauth2.googleapis.com/token",
         "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
         "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/my-sync-bot%40abc-theme-123456.iam.gserviceaccount.com"
-      }            
+      }
     }
   },
   "AttributeMap": [
@@ -497,7 +510,8 @@ Note: `Source` fields should be adjusted to fit the actual source adapter.
 Configurations for `BatchSize`, `BatchDelaySeconds`, `DisableAdd`, `DisableUpdate`, and `DisableDelete` are all optional with defaults as shown in example.
 
 ### Google Groups
-This destination is useful for keeping Google Groups in sync with reports from a personnel system. Below is an example 
+
+This destination is useful for keeping Google Groups in sync with reports from a personnel system. Below is an example
 of the destination configuration required for Google Groups:
 
 ```json
@@ -543,13 +557,14 @@ of the destination configuration required for Google Groups:
     {
       "Name": "Sync from personnel to Google Groups",
       "Source": {
-          "Path": ["/user-report"]
+        "Path": ["/user-report"]
       },
       "Destination": {
-          "GroupEmail": "group1@groups.domain.com",
-          "DisableAdd": false,
-          "DisableUpdate": false,
-          "DisableDelete": false
+        "GroupEmail": "group1@groups.domain.com",
+        "ExtraMembers": ["member1@domain.com", "member2@domain.com"],
+        "DisableAdd": false,
+        "DisableUpdate": false,
+        "DisableDelete": false
       }
     }
   ]
@@ -561,6 +576,7 @@ Note: `Source` fields should be adjusted to fit the actual source adapter.
 Configurations for `BatchSize`, `BatchDelaySeconds`, `DisableAdd`, `DisableUpdate`, and `DisableDelete` are all optional with defaults as shown in example.
 
 ### Google Sheets
+
 The Google Sheets destination creates a copy of the source data in a Google Sheets
 document.
 
@@ -576,6 +592,7 @@ The entire sheet will be overwritten with new data on every sync
 If not specified in the configuration, the sheet updated is "Sheet1"
 
 Example config:
+
 ```json
 {
   "Destination": {
@@ -593,7 +610,7 @@ Example config:
         "token_uri": "https://oauth2.googleapis.com/token",
         "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
         "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/my-sync-bot%40abc-theme-123456.iam.gserviceaccount.com"
-      }            
+      }
     }
   },
   "AttributeMap": [
@@ -624,18 +641,19 @@ Example config:
 Note: `Source` fields should be adjusted to fit the actual source adapter.
 
 ### Google Users
+
 This destination can update User records in the Google Directory. Create and
 delete are not yet implemented. The compare attribute is `email` (`primaryEmail`).
-A limited subset of user properties are available to be updated. 
+A limited subset of user properties are available to be updated.
 
 | property   | Google property | Google sub-property | Google type  |
-|------------|-----------------|---------------------|--------------|
+| ---------- | --------------- | ------------------- | ------------ |
 | id         | externalIds     | value               | organization |
 | email      | primaryEmail    |                     |              |
 | area       | locations       | area                | desk         |
-| costCenter | organizations*  | costCenter          | (not set)    |
-| department | organizations*  | department          | (not set)    |
-| title      | organizations*  | title               | (not set)    |
+| costCenter | organizations\* | costCenter          | (not set)    |
+| department | organizations\* | department          | (not set)    |
+| title      | organizations\* | title               | (not set)    |
 | phone      | phones          | value               |              |
 | manager    | relations       | value               | manager      |
 | familyName | name            | familyName          | n/a          |
@@ -643,10 +661,10 @@ A limited subset of user properties are available to be updated.
 
 Custom schema properties can be added using dot notation. For example, a
 custom property with Field name `Building` in the custom schema `Location`
-is represented as `Location.Building`. __NOTE:__ Spaces in schema name and field 
+is represented as `Location.Building`. **NOTE:** Spaces in schema name and field
 name should be replaced by underscores. Google may also append a number on field
 names, e.g. "Building_2", in which case the configuration should be `Location.Building_2`
-             
+
 Phone types are represented by separating the property name from its type with
 a comma (`,`). For example: `phone,home` or `phone,work`. Multiple phones of the
 same type can be referenced by adding a tilde (`~`) and a number. For example:
@@ -654,9 +672,9 @@ same type can be referenced by adding a tilde (`~`) and a number. For example:
 [Google API spec](https://developers.google.com/admin-sdk/directory/reference/rest/v1/users#User.FIELDS.phones)
 should be referenced using a custom type as follows: `phone,custom,sat`.
 
-__\* CAUTION:__ updating any field in `organizations` will overwrite all
+**\* CAUTION:** updating any field in `organizations` will overwrite all
 existing organizations
-             
+
 Following is an example configuration listing all available fields:
 
 ```json
@@ -678,7 +696,7 @@ Following is an example configuration listing all available fields:
         "token_uri": "https://oauth2.googleapis.com/token",
         "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
         "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/my-sync-bot%40abc-theme-123456.iam.gserviceaccount.com"
-      }            
+      }
     }
   },
   "AttributeMap": [
@@ -746,43 +764,45 @@ Note: `Source` fields should be adjusted to fit the actual source adapter.
 #### Google Service Account Configuration
 
 (see https://stackoverflow.com/questions/53808710/authenticate-to-google-admin-directory-api#answer-53808774 and
- https://developers.google.com/admin-sdk/reports/v1/guides/delegation)
+https://developers.google.com/admin-sdk/reports/v1/guides/delegation)
 
 In the [Google Developer Console](https://console.developers.google.com) ...
-* Enable the appropriate API for the Service Account in the Google APIs
- Developer Console, APIs and Services, Enable APIS And Services.
-  * For the Google Users adapter, enable "Admin SDK"
-  * For the Google Groups adapter, enable "Admin SDK"
-  * For the Google Contacts adapter, enable "Contacts API"
-  * For the Google Sheets adapter, enable "Google Sheets API"
-* Create a new Service Account and a corresponding JSON credential file, which should contain something like this:
+
+- Enable the appropriate API for the Service Account in the Google APIs
+  Developer Console, APIs and Services, Enable APIS And Services.
+  - For the Google Users adapter, enable "Admin SDK"
+  - For the Google Groups adapter, enable "Admin SDK"
+  - For the Google Contacts adapter, enable "Contacts API"
+  - For the Google Sheets adapter, enable "Google Sheets API"
+- Create a new Service Account and a corresponding JSON credential file, which should contain something like this:
 
 ```json
-  {
-    "type": "service_account",
-    "project_id": "abc-theme-123456",
-    "private_key_id": "abc123",
-    "private_key": "-----BEGIN PRIVATE KEY-----\nMIIabc...\nabc...\n...xyz\n-----END PRIVATE KEY-----\n",
-    "client_email": "my-sync-bot@abc-theme-123456.iam.gserviceaccount.com",
-    "client_id": "123456789012345678901",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/my-sync-bot%40abc-theme-123456.iam.gserviceaccount.com"
-  }
+{
+  "type": "service_account",
+  "project_id": "abc-theme-123456",
+  "private_key_id": "abc123",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIabc...\nabc...\n...xyz\n-----END PRIVATE KEY-----\n",
+  "client_email": "my-sync-bot@abc-theme-123456.iam.gserviceaccount.com",
+  "client_id": "123456789012345678901",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/my-sync-bot%40abc-theme-123456.iam.gserviceaccount.com"
+}
 ```
 
-These contents will need to be copied into the `config.json` file as the value of the `GoogleAuth` key under 
+These contents will need to be copied into the `config.json` file as the value of the `GoogleAuth` key under
 `Destination`/`ExtraJSON`.
 
 In Google Admin, Security, [API Controls](https://admin.google.com/ac/owl?hl=en) ...
-* Manage Domain-wide Delegation
-* Add the appropriate API Scopes to the Service Account. Use the numeric `client_id`.
-* API Scopes required for Google Groups are: `https://www.googleapis.com/auth/admin.directory.group` and
+
+- Manage Domain-wide Delegation
+- Add the appropriate API Scopes to the Service Account. Use the numeric `client_id`.
+- API Scopes required for Google Groups are: `https://www.googleapis.com/auth/admin.directory.group` and
   `https://www.googleapis.com/auth/admin.directory.group.member`
-* The API Scope required for Google Contacts is: `https://www.google.com/m8/feeds/contacts/`
-* The API Scope required for Google User Directory is: `https://www.googleapis.com/auth/admin.directory.user`
-* Google Sheets does not require Domain-wide Delegation. Instead, share the sheet with the service account. Note: it will say the user is not in the organization. This warning can be ignored. If you do add a `DelegatedAdminEmail` address, you must use the API Scope https://www.googleapis.com/auth/spreadsheets which will grant admin access to all sheets.
+- The API Scope required for Google Contacts is: `https://www.google.com/m8/feeds/contacts/`
+- The API Scope required for Google User Directory is: `https://www.googleapis.com/auth/admin.directory.user`
+- Google Sheets does not require Domain-wide Delegation. Instead, share the sheet with the service account. Note: it will say the user is not in the organization. This warning can be ignored. If you do add a `DelegatedAdminEmail` address, you must use the API Scope https://www.googleapis.com/auth/spreadsheets which will grant admin access to all sheets.
 
 The sync job will need to use the Service Account credentials to impersonate another user that has
 appropriate domain privileges and who has logged in at least once into Google Workspace and
@@ -791,38 +811,37 @@ as the `DelegatedAdminEmail` value under `Destination`/`ExtraJSON`.
 
 ### SolarWinds WebHelpDesk
 
-
 ```json
 {
   "AttributeMap": [
-      {
-        "Source": "FIRST_NAME",
-        "Destination": "firstName",
-        "required": true,
-        "CaseSensitive": true
-      },
-      {
-        "Source": "LAST_NAME",
-        "Destination": "lastName",
-        "required": true,
-        "CaseSensitive": true
-      },
-      {
-        "Source": "EMAIL",
-        "Destination": "email",
-        "required": true,
-        "CaseSensitive": false
-      },
-      {
-        "Source": "USER_NAME",
-        "Destination": "username",
-        "required": true,
-        "CaseSensitive": false
-      },
-      {
-        "Source": "Staff_ID",
-        "Destination": "employmentStatus"
-      }
+    {
+      "Source": "FIRST_NAME",
+      "Destination": "firstName",
+      "required": true,
+      "CaseSensitive": true
+    },
+    {
+      "Source": "LAST_NAME",
+      "Destination": "lastName",
+      "required": true,
+      "CaseSensitive": true
+    },
+    {
+      "Source": "EMAIL",
+      "Destination": "email",
+      "required": true,
+      "CaseSensitive": false
+    },
+    {
+      "Source": "USER_NAME",
+      "Destination": "username",
+      "required": true,
+      "CaseSensitive": false
+    },
+    {
+      "Source": "Staff_ID",
+      "Destination": "employmentStatus"
+    }
   ],
   "Destination": {
     "Type": "WebHelpDesk",
@@ -909,9 +928,9 @@ aws logs get-log-events \
    --query 'events[*].message'
 ```
 
-Replace `/aws/lambda/lambda-name` with the actual log group name and 
+Replace `/aws/lambda/lambda-name` with the actual log group name and
 `2019/11/14/[$LATEST]0123456789abcdef0123456789abcdef` with the actual log
 stream. Note the single quotes around the log stream name to prevent the shell
-from interpreting the `$` character. `--output text` can be changed to 
+from interpreting the `$` character. `--output text` can be changed to
 `--output json` if desired. Timestamps are available if needed, but omitted
 in this example by the `--query` string.
