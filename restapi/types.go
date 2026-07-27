@@ -1,6 +1,6 @@
 package restapi
 
-import "github.com/sil-org/personnel-sync/v6/internal"
+import "github.com/sil-org/personnel-sync/v7/internal"
 
 const (
 	DefaultHttpTimeoutSeconds = 45
