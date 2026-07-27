@@ -6,7 +6,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/sil-org/personnel-sync/v6/alert"
+	"github.com/sil-org/personnel-sync/v7/alert"
 )
 
 type Config struct {

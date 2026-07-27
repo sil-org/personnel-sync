@@ -12,7 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/sil-org/personnel-sync/v6/internal"
+	"github.com/sil-org/personnel-sync/v7/internal"
 )
 
 const (

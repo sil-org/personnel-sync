@@ -7,11 +7,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/sil-org/personnel-sync/v6/alert"
-	"github.com/sil-org/personnel-sync/v6/google"
-	"github.com/sil-org/personnel-sync/v6/internal"
-	"github.com/sil-org/personnel-sync/v6/restapi"
-	"github.com/sil-org/personnel-sync/v6/webhelpdesk"
+	"github.com/sil-org/personnel-sync/v7/alert"
+	"github.com/sil-org/personnel-sync/v7/google"
+	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/sil-org/personnel-sync/v7/restapi"
+	"github.com/sil-org/personnel-sync/v7/webhelpdesk"
 
 	"github.com/getsentry/sentry-go"
 )
