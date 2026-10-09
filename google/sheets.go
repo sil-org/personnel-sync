@@ -1,11 +1,11 @@
 package google
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/syslog"
 
-	"golang.org/x/net/context"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"

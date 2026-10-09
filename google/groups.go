@@ -1,6 +1,7 @@
 package google
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/syslog"
@@ -14,12 +15,10 @@ import (
 	"google.golang.org/api/googleapi"
 
 	"github.com/sil-org/personnel-sync/v7/internal"
-
-	"golang.org/x/net/context"
 )
 
 const (
-	RoleMember  = "MEMBER"
+	RoleMember = "MEMBER"
 )
 
 type GoogleGroups struct {
