@@ -119,7 +119,7 @@ func TestRestAPI_ListUsers(t *testing.T) {
 			name: "workday-like results",
 			sourceConfig: internal.SourceConfig{
 				Type: internal.SourceTypeRestAPI,
-				ExtraJSON: []byte(fmt.Sprintf(extraJSONtemplate,
+				ExtraJSON: fmt.Appendf(nil, extraJSONtemplate,
 					workday.method,
 					server.URL,
 					workday.resultsContainer,
@@ -128,7 +128,7 @@ func TestRestAPI_ListUsers(t *testing.T) {
 					workday.password,
 					workday.compareAttr,
 					workday.idAttr,
-				)),
+				),
 			},
 			syncSet: `{"Paths":["` + workday.path + `"]}`,
 			desiredAttrs: []string{
@@ -181,7 +181,7 @@ func TestRestAPI_ListUsers(t *testing.T) {
 			name: "other results",
 			sourceConfig: internal.SourceConfig{
 				Type: internal.SourceTypeRestAPI,
-				ExtraJSON: []byte(fmt.Sprintf(extraJSONtemplate,
+				ExtraJSON: fmt.Appendf(nil, extraJSONtemplate,
 					other.method,
 					server.URL,
 					other.resultsContainer,
@@ -190,7 +190,7 @@ func TestRestAPI_ListUsers(t *testing.T) {
 					other.password,
 					other.compareAttr,
 					other.idAttr,
-				)),
+				),
 			},
 			syncSet: `{"Paths":["` + other.path + `"]}`,
 			desiredAttrs: []string{
@@ -232,7 +232,7 @@ func TestRestAPI_ListUsers(t *testing.T) {
 			name: "sfdc results",
 			sourceConfig: internal.SourceConfig{
 				Type: internal.SourceTypeRestAPI,
-				ExtraJSON: []byte(fmt.Sprintf(extraJSONtemplate,
+				ExtraJSON: fmt.Appendf(nil, extraJSONtemplate,
 					salesforce.method,
 					server.URL,
 					salesforce.resultsContainer,
@@ -241,7 +241,7 @@ func TestRestAPI_ListUsers(t *testing.T) {
 					salesforce.password,
 					salesforce.compareAttr,
 					salesforce.idAttr,
-				)),
+				),
 			},
 			syncSet: `{"Paths":["` + salesforce.path + `"]}`,
 			desiredAttrs: []string{
@@ -267,7 +267,7 @@ func TestRestAPI_ListUsers(t *testing.T) {
 			name: "auth error",
 			sourceConfig: internal.SourceConfig{
 				Type: internal.SourceTypeRestAPI,
-				ExtraJSON: []byte(fmt.Sprintf(extraJSONtemplate,
+				ExtraJSON: fmt.Appendf(nil, extraJSONtemplate,
 					other.method,
 					server.URL,
 					other.resultsContainer,
@@ -276,7 +276,7 @@ func TestRestAPI_ListUsers(t *testing.T) {
 					other.password+"bad",
 					other.compareAttr,
 					other.idAttr,
-				)),
+				),
 			},
 			syncSet: `{"Paths":["` + other.path + `"]}`,
 			desiredAttrs: []string{

@@ -2,6 +2,7 @@ package google
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -9,12 +10,12 @@ import (
 	"io"
 	"log"
 	"log/syslog"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
 
-	"golang.org/x/net/context"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/googleapi"
 
@@ -355,12 +356,8 @@ func (g *GoogleContacts) extractPersonsFromResponse(contacts []Contact) ([]inter
 
 func mergeAttributeMaps(a, b map[string]string) map[string]string {
 	out := map[string]string{}
-	for k, v := range a {
-		out[k] = v
-	}
-	for k, v := range b {
-		out[k] = v
-	}
+	maps.Copy(out, a)
+	maps.Copy(out, b)
 	return out
 }
 
