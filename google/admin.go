@@ -1,12 +1,12 @@
 package google
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"google.golang.org/api/option"
 
-	"golang.org/x/net/context"
 	"golang.org/x/oauth2/google"
 	admin "google.golang.org/api/admin/directory/v1"
 )

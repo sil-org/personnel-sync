@@ -289,10 +289,7 @@ func getItemBasedUsers(startIndex, count int, pConfig PaginationConfig) string {
 		return responseBody
 	}
 
-	endIndex := startIndex + count
-	if endIndex > userCount {
-		endIndex = userCount
-	}
+	endIndex := min(startIndex+count, userCount)
 
 	reqUsers := pConfig.users[startIndex:endIndex]
 
@@ -308,19 +305,13 @@ func getPageBasedUsers(startPage, count int, pConfig PaginationConfig) string {
 	userCount := len(pConfig.users)
 
 	responseBody := `[]`
-	startIndex := (startPage - 1) * count
-	if startIndex < 0 {
-		startIndex = 0
-	}
+	startIndex := max((startPage-1)*count, 0)
 
 	if startIndex >= userCount {
 		return responseBody
 	}
 
-	endIndex := startIndex + count
-	if endIndex > userCount {
-		endIndex = userCount
-	}
+	endIndex := min(startIndex+count, userCount)
 
 	reqUsers := pConfig.users[startIndex:endIndex]
 
