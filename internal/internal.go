@@ -207,6 +207,16 @@ func RunSyncSet(logger *log.Logger, source Source, destination Destination, conf
 
 	changeSet := GenerateChangeSet(logger, sourcePeople, destinationPeople, config)
 
+	if destination.DisableAdd() {
+		changeSet.Create = nil
+	}
+	if destination.DisableUpdate() {
+		changeSet.Update = nil
+	}
+	if destination.DisableDelete() {
+		changeSet.Delete = nil
+	}
+
 	logger.Printf("ChangeSet Plans: Create %d, Update %d, Delete %d\n",
 		len(changeSet.Create), len(changeSet.Update), len(changeSet.Delete))
 
@@ -297,6 +307,18 @@ func (e *EmptyDestination) ListUsers(desiredAttrs []string) ([]Person, error) {
 
 func (e *EmptyDestination) ApplyChangeSet(changes ChangeSet, eventLog chan<- EventLogItem) ChangeResults {
 	return ChangeResults{}
+}
+
+func (e *EmptyDestination) DisableAdd() bool {
+	return true
+}
+
+func (e *EmptyDestination) DisableUpdate() bool {
+	return true
+}
+
+func (e *EmptyDestination) DisableDelete() bool {
+	return true
 }
 
 type EmptySource struct{}

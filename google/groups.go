@@ -65,6 +65,8 @@ func NewGoogleGroupsDestination(destinationConfig internal.DestinationConfig) (i
 		return &GoogleGroups{}, err
 	}
 
+	googleGroups.DestinationConfig = destinationConfig
+
 	return &googleGroups, nil
 }
 
@@ -220,4 +222,16 @@ func (g *GoogleGroups) removeMember(
 	}
 
 	atomic.AddUint64(counter, 1)
+}
+
+func (g *GoogleGroups) DisableAdd() bool {
+	return g.GroupSyncSet.DisableAdd || g.DestinationConfig.DisableAdd
+}
+
+func (g *GoogleGroups) DisableUpdate() bool {
+	return true
+}
+
+func (g *GoogleGroups) DisableDelete() bool {
+	return g.GroupSyncSet.DisableDelete || g.DestinationConfig.DisableDelete
 }

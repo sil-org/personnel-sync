@@ -38,6 +38,7 @@ type WebHelpDesk struct {
 	ListClientsPageLimit int
 	BatchSize            int
 	BatchDelaySeconds    int
+	DestinationConfig    internal.DestinationConfig `json:"-"`
 }
 
 func NewWebHelpDeskDestination(destinationConfig internal.DestinationConfig) (internal.Destination, error) {
@@ -47,6 +48,8 @@ func NewWebHelpDeskDestination(destinationConfig internal.DestinationConfig) (in
 	if err != nil {
 		return &webHelpDesk, err
 	}
+
+	webHelpDesk.DestinationConfig = destinationConfig
 
 	// Set defaults for batch size per minute and page limit if not provided in ExtraJSON
 	if webHelpDesk.BatchSize <= 0 {
@@ -293,4 +296,16 @@ func getWebHelpDeskClientFromPerson(person internal.Person) (User, error) {
 	}
 
 	return newClient, nil
+}
+
+func (w *WebHelpDesk) DisableAdd() bool {
+	return w.DestinationConfig.DisableAdd
+}
+
+func (w *WebHelpDesk) DisableUpdate() bool {
+	return w.DestinationConfig.DisableUpdate
+}
+
+func (w *WebHelpDesk) DisableDelete() bool {
+	return true
 }

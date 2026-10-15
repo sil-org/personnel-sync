@@ -669,3 +669,15 @@ func (r *RestAPI) filterPeople(people chan internal.Person) ([]internal.Person, 
 
 	return results, nil
 }
+
+func (r *RestAPI) DisableAdd() bool {
+	return r.destinationConfig.DisableAdd
+}
+
+func (r *RestAPI) DisableUpdate() bool {
+	return r.destinationConfig.DisableUpdate
+}
+
+func (r *RestAPI) DisableDelete() bool {
+	return r.destinationConfig.DisableDelete
+}
