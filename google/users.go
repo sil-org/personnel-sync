@@ -546,14 +546,14 @@ func updateRelations(newRelation string, oldRelations any) ([]admin.UserRelation
 	return relations, nil
 }
 
-func (g *GoogleUsers) DisableAdd() bool {
+func (g *GoogleUsers) AddDisabled() bool {
 	return true
 }
 
-func (g *GoogleUsers) DisableUpdate() bool {
+func (g *GoogleUsers) UpdateDisabled() bool {
 	return g.DestinationConfig.DisableUpdate
 }
 
-func (g *GoogleUsers) DisableDelete() bool {
+func (g *GoogleUsers) DeleteDisabled() bool {
 	return true
 }

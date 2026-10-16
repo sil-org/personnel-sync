@@ -88,9 +88,9 @@ type Destination interface {
 	ForSet(syncSetJson json.RawMessage) error
 	ListUsers(desiredAttrs []string) ([]Person, error)
 	ApplyChangeSet(changes ChangeSet, activityLog chan<- EventLogItem) ChangeResults
-	DisableAdd() bool
-	DisableUpdate() bool
-	DisableDelete() bool
+	AddDisabled() bool
+	UpdateDisabled() bool
+	DeleteDisabled() bool
 }
 
 type Source interface {

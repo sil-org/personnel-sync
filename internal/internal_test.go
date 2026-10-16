@@ -352,15 +352,15 @@ func (m *testMockDestination) ApplyChangeSet(changes ChangeSet, eventLog chan<- 
 	}
 }
 
-func (m *testMockDestination) DisableAdd() bool {
+func (m *testMockDestination) AddDisabled() bool {
 	return m.disableAdd
 }
 
-func (m *testMockDestination) DisableUpdate() bool {
+func (m *testMockDestination) UpdateDisabled() bool {
 	return m.disableUpdate
 }
 
-func (m *testMockDestination) DisableDelete() bool {
+func (m *testMockDestination) DeleteDisabled() bool {
 	return m.disableDelete
 }
 

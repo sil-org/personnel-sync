@@ -298,14 +298,14 @@ func getWebHelpDeskClientFromPerson(person internal.Person) (User, error) {
 	return newClient, nil
 }
 
-func (w *WebHelpDesk) DisableAdd() bool {
+func (w *WebHelpDesk) AddDisabled() bool {
 	return w.DestinationConfig.DisableAdd
 }
 
-func (w *WebHelpDesk) DisableUpdate() bool {
+func (w *WebHelpDesk) UpdateDisabled() bool {
 	return w.DestinationConfig.DisableUpdate
 }
 
-func (w *WebHelpDesk) DisableDelete() bool {
+func (w *WebHelpDesk) DeleteDisabled() bool {
 	return true
 }

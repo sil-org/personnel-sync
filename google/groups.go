@@ -224,14 +224,14 @@ func (g *GoogleGroups) removeMember(
 	atomic.AddUint64(counter, 1)
 }
 
-func (g *GoogleGroups) DisableAdd() bool {
+func (g *GoogleGroups) AddDisabled() bool {
 	return g.GroupSyncSet.DisableAdd || g.DestinationConfig.DisableAdd
 }
 
-func (g *GoogleGroups) DisableUpdate() bool {
+func (g *GoogleGroups) UpdateDisabled() bool {
 	return true
 }
 
-func (g *GoogleGroups) DisableDelete() bool {
+func (g *GoogleGroups) DeleteDisabled() bool {
 	return g.GroupSyncSet.DisableDelete || g.DestinationConfig.DisableDelete
 }

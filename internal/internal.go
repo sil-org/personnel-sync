@@ -207,13 +207,13 @@ func RunSyncSet(logger *log.Logger, source Source, destination Destination, conf
 
 	changeSet := GenerateChangeSet(logger, sourcePeople, destinationPeople, config)
 
-	if destination.DisableAdd() {
+	if destination.AddDisabled() {
 		changeSet.Create = nil
 	}
-	if destination.DisableUpdate() {
+	if destination.UpdateDisabled() {
 		changeSet.Update = nil
 	}
-	if destination.DisableDelete() {
+	if destination.DeleteDisabled() {
 		changeSet.Delete = nil
 	}
 
@@ -309,15 +309,15 @@ func (e *EmptyDestination) ApplyChangeSet(changes ChangeSet, eventLog chan<- Eve
 	return ChangeResults{}
 }
 
-func (e *EmptyDestination) DisableAdd() bool {
+func (e *EmptyDestination) AddDisabled() bool {
 	return true
 }
 
-func (e *EmptyDestination) DisableUpdate() bool {
+func (e *EmptyDestination) UpdateDisabled() bool {
 	return true
 }
 
-func (e *EmptyDestination) DisableDelete() bool {
+func (e *EmptyDestination) DeleteDisabled() bool {
 	return true
 }
 

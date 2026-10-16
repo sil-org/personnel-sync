@@ -644,14 +644,14 @@ func (g *GoogleContacts) deleteContact(
 	atomic.AddUint64(counter, 1)
 }
 
-func (g *GoogleContacts) DisableAdd() bool {
+func (g *GoogleContacts) AddDisabled() bool {
 	return g.DestinationConfig.DisableAdd
 }
 
-func (g *GoogleContacts) DisableUpdate() bool {
+func (g *GoogleContacts) UpdateDisabled() bool {
 	return g.DestinationConfig.DisableUpdate
 }
 
-func (g *GoogleContacts) DisableDelete() bool {
+func (g *GoogleContacts) DeleteDisabled() bool {
 	return g.DestinationConfig.DisableDelete
 }

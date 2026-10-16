@@ -272,14 +272,14 @@ func makeSheetDataFromPersons(header map[int]string, persons []internal.Person) 
 	return sheetData
 }
 
-func (g *GoogleSheets) DisableAdd() bool {
+func (g *GoogleSheets) AddDisabled() bool {
 	return g.DestinationConfig.DisableAdd || g.DestinationConfig.DisableDelete || g.DestinationConfig.DisableUpdate
 }
 
-func (g *GoogleSheets) DisableUpdate() bool {
+func (g *GoogleSheets) UpdateDisabled() bool {
 	return g.DestinationConfig.DisableAdd || g.DestinationConfig.DisableDelete || g.DestinationConfig.DisableUpdate
 }
 
-func (g *GoogleSheets) DisableDelete() bool {
+func (g *GoogleSheets) DeleteDisabled() bool {
 	return g.DestinationConfig.DisableAdd || g.DestinationConfig.DisableDelete || g.DestinationConfig.DisableUpdate
 }
