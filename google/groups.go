@@ -28,6 +28,7 @@ type GoogleGroups struct {
 	GroupSyncSet      GroupSyncSet
 	BatchSize         int
 	BatchDelaySeconds int
+	foundExtraMembers []string
 }
 
 type GroupSyncSet struct {
@@ -82,6 +83,7 @@ func (g *GoogleGroups) ForSet(syncSetJson json.RawMessage) error {
 	}
 
 	g.GroupSyncSet = syncSetConfig
+	g.foundExtraMembers = nil
 
 	return nil
 }
@@ -105,10 +107,12 @@ func (g *GoogleGroups) ListUsers(desiredAttrs []string) ([]internal.Person, erro
 	}
 
 	var members []internal.Person
+	g.foundExtraMembers = nil
 
 	for _, nextMember := range membersList {
 		// Do not include ExtraMembers in list to prevent inclusion in delete list
-		if slices.Contains(g.GroupSyncSet.ExtraMembers, nextMember.Email) {
+		if g.isExtraMember(nextMember.Email) {
+			g.foundExtraMembers = append(g.foundExtraMembers, nextMember.Email)
 			continue
 		}
 
@@ -133,12 +137,16 @@ func (g *GoogleGroups) ApplyChangeSet(
 	// key = email, value = role
 	toBeCreated := map[string]string{}
 	for _, person := range changes.Create {
-		toBeCreated[person.CompareValue] = RoleMember
+		if !g.isFoundExtraMember(person.CompareValue) {
+			toBeCreated[person.CompareValue] = RoleMember
+		}
 	}
 
 	// Add any ExtraMembers to Create list since they are not in the source people
 	for _, member := range g.GroupSyncSet.ExtraMembers {
-		toBeCreated[member] = RoleMember
+		if !g.isFoundExtraMember(member) {
+			toBeCreated[member] = RoleMember
+		}
 	}
 
 	// One minute per batch
@@ -155,7 +163,7 @@ func (g *GoogleGroups) ApplyChangeSet(
 	if !g.GroupSyncSet.DisableDelete {
 		for _, dp := range changes.Delete {
 			// Do not delete ExtraMembers
-			if slices.Contains(g.GroupSyncSet.ExtraMembers, dp.CompareValue) {
+			if g.isExtraMember(dp.CompareValue) {
 				continue
 			}
 			wg.Add(1)
@@ -167,6 +175,18 @@ func (g *GoogleGroups) ApplyChangeSet(
 	wg.Wait()
 
 	return results
+}
+
+func (g *GoogleGroups) isExtraMember(email string) bool {
+	return slices.ContainsFunc(g.GroupSyncSet.ExtraMembers, func(m string) bool {
+		return strings.EqualFold(m, email)
+	})
+}
+
+func (g *GoogleGroups) isFoundExtraMember(email string) bool {
+	return slices.ContainsFunc(g.foundExtraMembers, func(m string) bool {
+		return strings.EqualFold(m, email)
+	})
 }
 
 func (g *GoogleGroups) addMember(
