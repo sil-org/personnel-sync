@@ -272,14 +272,20 @@ func makeSheetDataFromPersons(header map[int]string, persons []internal.Person) 
 	return sheetData
 }
 
+// AddDisabled returns true if any disable flag is set because Google Sheets sync overwrites
+// the entire sheet; disabling any operation halts the entire sync.
 func (g *GoogleSheets) AddDisabled() bool {
 	return g.DestinationConfig.DisableAdd || g.DestinationConfig.DisableDelete || g.DestinationConfig.DisableUpdate
 }
 
+// UpdateDisabled returns true if any disable flag is set because Google Sheets sync overwrites
+// the entire sheet; disabling any operation halts the entire sync.
 func (g *GoogleSheets) UpdateDisabled() bool {
 	return g.DestinationConfig.DisableAdd || g.DestinationConfig.DisableDelete || g.DestinationConfig.DisableUpdate
 }
 
+// DeleteDisabled returns true if any disable flag is set because Google Sheets sync overwrites
+// the entire sheet; disabling any operation halts the entire sync.
 func (g *GoogleSheets) DeleteDisabled() bool {
 	return g.DestinationConfig.DisableAdd || g.DestinationConfig.DisableDelete || g.DestinationConfig.DisableUpdate
 }
