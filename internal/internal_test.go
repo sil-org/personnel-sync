@@ -1,9 +1,11 @@
 package internal
 
 import (
+	"bytes"
 	"log"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -323,6 +325,169 @@ func Test_processExpressions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := processExpressions(tt.args.logger, tt.args.config, tt.args.person); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("processExpressions() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+type testMockDestination struct {
+	EmptyDestination
+	people         []Person
+	disableAdd     bool
+	disableUpdate  bool
+	disableDelete  bool
+	appliedChanges ChangeSet
+}
+
+func (m *testMockDestination) ListUsers(desiredAttrs []string) ([]Person, error) {
+	return m.people, nil
+}
+
+func (m *testMockDestination) ApplyChangeSet(changes ChangeSet, eventLog chan<- EventLogItem) ChangeResults {
+	m.appliedChanges = changes
+	return ChangeResults{
+		Created: uint64(len(changes.Create)),
+		Updated: uint64(len(changes.Update)),
+		Deleted: uint64(len(changes.Delete)),
+	}
+}
+
+func (m *testMockDestination) AddDisabled() bool {
+	return m.disableAdd
+}
+
+func (m *testMockDestination) UpdateDisabled() bool {
+	return m.disableUpdate
+}
+
+func (m *testMockDestination) DeleteDisabled() bool {
+	return m.disableDelete
+}
+
+type testMockSource struct {
+	EmptySource
+	people []Person
+}
+
+func (m *testMockSource) ListUsers(desiredAttrs []string) ([]Person, error) {
+	return m.people, nil
+}
+
+func TestRunSyncSet_DisabledActions(t *testing.T) {
+	tests := []struct {
+		name          string
+		dryRun        bool
+		disableAdd    bool
+		disableUpdate bool
+		disableDelete bool
+		source        []Person
+		dest          []Person
+		wantPlansLog  string
+		wantApplied   ChangeSet
+	}{
+		{
+			name:          "dry run with delete disabled zeroes planned deletes in log",
+			dryRun:        true,
+			disableDelete: true,
+			source: []Person{
+				{CompareValue: "user1@example.com", Attributes: map[string]string{"email": "user1@example.com"}},
+			},
+			dest: []Person{
+				{CompareValue: "user1@example.com", Attributes: map[string]string{"email": "user1@example.com"}},
+				{CompareValue: "user2@example.com", Attributes: map[string]string{"email": "user2@example.com"}},
+			},
+			wantPlansLog: "ChangeSet Plans: Create 0, Update 0, Delete 0",
+			wantApplied:  ChangeSet{},
+		},
+		{
+			name:       "dry run with add disabled zeroes planned creates in log",
+			dryRun:     true,
+			disableAdd: true,
+			source: []Person{
+				{CompareValue: "user1@example.com", Attributes: map[string]string{"email": "user1@example.com"}},
+				{CompareValue: "user2@example.com", Attributes: map[string]string{"email": "user2@example.com"}},
+			},
+			dest: []Person{
+				{CompareValue: "user1@example.com", Attributes: map[string]string{"email": "user1@example.com"}},
+			},
+			wantPlansLog: "ChangeSet Plans: Create 0, Update 0, Delete 0",
+			wantApplied:  ChangeSet{},
+		},
+		{
+			name:          "dry run with update disabled zeroes planned updates in log",
+			dryRun:        true,
+			disableUpdate: true,
+			source: []Person{
+				{CompareValue: "user1@example.com", Attributes: map[string]string{"email": "user1@example.com", "name": "New Name"}},
+			},
+			dest: []Person{
+				{CompareValue: "user1@example.com", Attributes: map[string]string{"email": "user1@example.com", "name": "Old Name"}},
+			},
+			wantPlansLog: "ChangeSet Plans: Create 0, Update 0, Delete 0",
+			wantApplied:  ChangeSet{},
+		},
+		{
+			name:          "real run with delete disabled applies nil delete",
+			dryRun:        false,
+			disableDelete: true,
+			source: []Person{
+				{CompareValue: "user1@example.com", Attributes: map[string]string{"email": "user1@example.com"}},
+			},
+			dest: []Person{
+				{CompareValue: "user1@example.com", Attributes: map[string]string{"email": "user1@example.com"}},
+				{CompareValue: "user2@example.com", Attributes: map[string]string{"email": "user2@example.com"}},
+			},
+			wantPlansLog: "ChangeSet Plans: Create 0, Update 0, Delete 0",
+			wantApplied: ChangeSet{
+				Create: nil,
+				Update: nil,
+				Delete: nil,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := log.New(&buf, "", 0)
+
+			src := &testMockSource{people: tt.source}
+			dst := &testMockDestination{
+				people:        tt.dest,
+				disableAdd:    tt.disableAdd,
+				disableUpdate: tt.disableUpdate,
+				disableDelete: tt.disableDelete,
+			}
+
+			cfg := Config{
+				Runtime: RuntimeConfig{
+					DryRunMode: tt.dryRun,
+				},
+				AttributeMap: []AttributeMap{
+					{Source: "email", Destination: "email"},
+					{Source: "name", Destination: "name"},
+				},
+			}
+
+			err := RunSyncSet(logger, src, dst, cfg)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if !strings.Contains(buf.String(), tt.wantPlansLog) {
+				t.Errorf("log output missing %q, got:\n%s", tt.wantPlansLog, buf.String())
+			}
+
+			if !tt.dryRun {
+				if len(dst.appliedChanges.Create) != len(tt.wantApplied.Create) {
+					t.Errorf("applied Create count = %d, want %d", len(dst.appliedChanges.Create), len(tt.wantApplied.Create))
+				}
+				if len(dst.appliedChanges.Update) != len(tt.wantApplied.Update) {
+					t.Errorf("applied Update count = %d, want %d", len(dst.appliedChanges.Update), len(tt.wantApplied.Update))
+				}
+				if len(dst.appliedChanges.Delete) != len(tt.wantApplied.Delete) {
+					t.Errorf("applied Delete count = %d, want %d", len(dst.appliedChanges.Delete), len(tt.wantApplied.Delete))
+				}
 			}
 		})
 	}
