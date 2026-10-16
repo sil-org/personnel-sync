@@ -3,10 +3,13 @@ package restapi
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Jeffail/gabs/v2"
 	"github.com/stretchr/testify/require"
@@ -883,3 +886,94 @@ func TestRestAPI_listUsersForPathWithPagination(t *testing.T) {
 		})
 	}
 }
+
+func TestRestAPI_httpRequest_RateLimitRetry(t *testing.T) {
+	t.Run("succeeds after 429 with Retry-After seconds", func(t *testing.T) {
+		attempts := 0
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			attempts++
+			if attempts < 3 {
+				w.Header().Set("Retry-After", "2")
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write([]byte(`{"error":"rate limit exceeded"}`))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		}))
+		defer srv.Close()
+
+		var delays []time.Duration
+		r := RestAPI{
+			retryWait: func(d time.Duration) {
+				delays = append(delays, d)
+			},
+		}
+
+		res := r.httpRequest(http.MethodPost, srv.URL+"/users", `{"email":"test@example.com"}`, nil)
+		require.NoError(t, res.Err)
+		require.Equal(t, http.StatusOK, res.RespCode)
+		require.Equal(t, `{"status":"ok"}`, res.RespBody)
+		require.Equal(t, 3, attempts)
+		require.Equal(t, []time.Duration{2 * time.Second, 2 * time.Second}, delays)
+	})
+
+	t.Run("fails after exhausting max retries on 429", func(t *testing.T) {
+		attempts := 0
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			attempts++
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"too many requests"}`))
+		}))
+		defer srv.Close()
+
+		var delays []time.Duration
+		r := RestAPI{
+			retryWait: func(d time.Duration) {
+				delays = append(delays, d)
+			},
+		}
+
+		res := r.httpRequest(http.MethodGet, srv.URL+"/users", "", nil)
+		require.Error(t, res.Err)
+		require.Equal(t, http.StatusTooManyRequests, res.RespCode)
+		require.Equal(t, `{"error":"too many requests"}`, res.RespBody)
+		require.Equal(t, DefaultMaxRetries+1, attempts)
+		require.Len(t, delays, DefaultMaxRetries)
+		for i, d := range delays {
+			minExpected := DefaultRetryInitialDelay * (1 << i)
+			maxExpected := minExpected + (minExpected / 2)
+			require.GreaterOrEqual(t, d, minExpected)
+			require.Less(t, d, maxExpected)
+		}
+	})
+
+	t.Run("ListUsers retries on 429 and succeeds", func(t *testing.T) {
+		attempts := 0
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			attempts++
+			if attempts == 1 {
+				w.Header().Set("Retry-After", "1")
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write([]byte(`{"error":"rate limit"}`))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[{"id":"1","email":"user1@example.com"}]`))
+		}))
+		defer srv.Close()
+
+		r := New()
+		r.BaseURL = srv.URL
+		r.CompareAttribute = "email"
+		r.setConfig = SetConfig{Paths: []string{"/users"}}
+		r.retryWait = func(d time.Duration) {}
+
+		people, err := r.ListUsers([]string{"email"})
+		require.NoError(t, err)
+		require.Len(t, people, 1)
+		require.Equal(t, "user1@example.com", people[0].CompareValue)
+		require.Equal(t, 2, attempts)
+	})
+}
+

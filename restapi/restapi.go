@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"log/syslog"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -250,40 +251,19 @@ func (r *RestAPI) listUsersForPath(
 }
 
 func (r *RestAPI) requestPage(desiredAttrs []string, url string, errLog chan<- string) []internal.Person {
-	timeout := r.getTimeout()
-
-	client := &http.Client{Timeout: time.Second * time.Duration(timeout)}
-	req, err := http.NewRequest(r.ListMethod, url, nil)
-	if err != nil {
-		log.Println(err)
-		errLog <- err.Error()
-	}
-
-	switch r.AuthType {
-	case AuthTypeBasic:
-		req.SetBasicAuth(r.Username, r.Password)
-	case AuthTypeBearer, AuthTypeSalesforceOauth:
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", r.Password))
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		errLog <- "error issuing http request, " + err.Error()
+	reqRes := r.httpRequest(r.ListMethod, url, "", nil)
+	if reqRes.Err != nil {
+		if reqRes.RespCode > 0 {
+			msg := fmt.Sprintf("response status code: %d url: %s response body: %s", reqRes.RespCode, url, reqRes.RespBody)
+			log.Print(msg)
+			errLog <- msg
+		} else {
+			errLog <- "error issuing http request, " + reqRes.Err.Error()
+		}
 		return nil
 	}
 
-	bodyText, err := io.ReadAll(resp.Body)
-	if err != nil {
-		errLog <- "error reading response body: " + err.Error()
-		return nil
-	}
-
-	if resp.StatusCode > 299 {
-		msg := fmt.Sprintf("response status code: %d url: %s response body: %s", resp.StatusCode, url, bodyText)
-		log.Print(msg)
-		errLog <- msg
-		return nil
-	}
+	bodyText := []byte(reqRes.RespBody)
 
 	// by default, json package uses float64 for all numbers -- UseNumber() makes it use the json.Number type
 	dec := json.NewDecoder(bytes.NewReader(bodyText))
@@ -596,48 +576,91 @@ type requestResults struct {
 }
 
 func (r *RestAPI) httpRequest(verb, url, body string, headers map[string]string) requestResults {
-	var req *http.Request
-	var err error
-	if body == "" {
-		req, err = http.NewRequest(verb, url, nil)
-	} else {
-		req, err = http.NewRequest(verb, url, strings.NewReader(body))
-	}
-	if err != nil {
-		return requestResults{Err: err}
+	timeout := r.getTimeout()
+	client := &http.Client{Timeout: time.Second * time.Duration(timeout)}
+
+	waitFn := r.retryWait
+	if waitFn == nil {
+		waitFn = time.Sleep
 	}
 
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-	req.Header.Set("User-Agent", r.UserAgent)
+	var lastResult requestResults
+	for attempt := 0; attempt <= DefaultMaxRetries; attempt++ {
+		var req *http.Request
+		var err error
+		if body == "" {
+			req, err = http.NewRequest(verb, url, nil)
+		} else {
+			req, err = http.NewRequest(verb, url, strings.NewReader(body))
+		}
+		if err != nil {
+			return requestResults{Err: err}
+		}
 
-	switch r.AuthType {
-	case AuthTypeBasic:
-		req.SetBasicAuth(r.Username, r.Password)
-	case AuthTypeBearer, AuthTypeSalesforceOauth:
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", r.Password))
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		req.Header.Set("User-Agent", r.UserAgent)
+
+		switch r.AuthType {
+		case AuthTypeBasic:
+			req.SetBasicAuth(r.Username, r.Password)
+		case AuthTypeBearer, AuthTypeSalesforceOauth:
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", r.Password))
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			code := 0
+			if resp != nil {
+				code = resp.StatusCode
+			}
+			return requestResults{RespCode: code, Err: err}
+		}
+
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		code := resp.StatusCode
+		if readErr != nil {
+			return requestResults{RespCode: code, Err: fmt.Errorf("failed to read http response body: %s", readErr)}
+		}
+		bodyString := string(bodyBytes)
+
+		if code == http.StatusTooManyRequests && attempt < DefaultMaxRetries {
+			delay := retryDelay(resp.Header.Get("Retry-After"), attempt)
+			log.Printf("rate limited (HTTP 429) on %s %s, retrying in %v (attempt %d/%d)", verb, url, delay, attempt+1, DefaultMaxRetries)
+			waitFn(delay)
+			lastResult = requestResults{RespBody: bodyString, RespCode: code, Err: errors.New(resp.Status)}
+			continue
+		}
+
+		if code >= 300 {
+			return requestResults{RespBody: bodyString, RespCode: code, Err: errors.New(resp.Status)}
+		}
+
+		return requestResults{RespBody: bodyString, RespCode: code, Err: nil}
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	code := resp.StatusCode
-	if err != nil {
-		return requestResults{RespCode: code, Err: err}
-	}
-	defer resp.Body.Close()
+	return lastResult
+}
 
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return requestResults{RespCode: code, Err: fmt.Errorf("failed to read http response body: %s", err)}
+func retryDelay(retryAfter string, attempt int) time.Duration {
+	if retryAfter != "" {
+		if seconds, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && seconds >= 0 {
+			return time.Duration(seconds) * time.Second
+		}
+		if retryTime, err := http.ParseTime(retryAfter); err == nil {
+			delay := time.Until(retryTime)
+			if delay > 0 {
+				return delay
+			}
+			return 0
+		}
 	}
-	bodyString := string(bodyBytes)
 
-	if code >= 400 {
-		return requestResults{RespBody: bodyString, RespCode: code, Err: errors.New(resp.Status)}
-	}
-
-	return requestResults{RespBody: bodyString, RespCode: code, Err: nil}
+	baseDelay := DefaultRetryInitialDelay * (1 << attempt)
+	jitter := time.Duration(rand.Int63n(int64(baseDelay / 2)))
+	return baseDelay + jitter
 }
 
 // parsePathTemplate verifies that the path has a bracketed id, and returns an error if it does not. It also normalizes
