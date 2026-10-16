@@ -1,10 +1,16 @@
 package restapi
 
-import "github.com/sil-org/personnel-sync/v7/internal"
+import (
+	"time"
+
+	"github.com/sil-org/personnel-sync/v7/internal"
+)
 
 const (
 	DefaultHttpTimeoutSeconds = 45
 	httpTimeoutEnv            = "HTTP_TIMEOUT_SECONDS"
+	DefaultMaxRetries         = 3
+	DefaultRetryInitialDelay  = time.Second
 )
 
 type RestAPI struct {
@@ -29,6 +35,7 @@ type RestAPI struct {
 	Pagination           Pagination
 	Filters              internal.Filters
 	HttpTimeoutSeconds   int
+	retryWait            func(time.Duration)
 }
 
 type SetConfig struct {
