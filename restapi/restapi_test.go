@@ -3,10 +3,14 @@ package restapi
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Jeffail/gabs/v2"
 	"github.com/stretchr/testify/require"
@@ -291,6 +295,58 @@ func TestRestAPI_ListUsers(t *testing.T) {
 			wantErr: true,
 			errMsg:  "Not Authorized",
 		},
+		{
+			name: "retries on 429 and succeeds",
+			sourceConfig: internal.SourceConfig{
+				Type: internal.SourceTypeRestAPI,
+				ExtraJSON: fmt.Appendf(nil, extraJSONtemplate,
+					other.method,
+					server.URL,
+					other.resultsContainer,
+					other.authType,
+					other.username,
+					other.password,
+					other.compareAttr,
+					other.idAttr,
+				),
+			},
+			syncSet: `{"Paths":["/ratelimit/list"]}`,
+			desiredAttrs: []string{
+				"employeeID",
+				"first",
+				"last",
+				"display",
+				"username",
+				"email",
+			},
+			want: []internal.Person{
+				{
+					ID:           "10000013",
+					CompareValue: "mickey_mouse@acme.com",
+					Attributes: map[string]string{
+						"employeeID": "10000013",
+						"first":      "Mickey",
+						"last":       "Mouse",
+						"display":    "Mickey Mouse",
+						"username":   "MICKEY_MOUSE",
+						"email":      "mickey_mouse@acme.com",
+					},
+				},
+				{
+					ID:           "10000011",
+					CompareValue: "donald_duck@acme.com",
+					Attributes: map[string]string{
+						"employeeID": "10000011",
+						"first":      "Donald",
+						"last":       "Duck",
+						"display":    "Donald Duck",
+						"username":   "DONALD_DUCK",
+						"email":      "donald_duck@acme.com",
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -564,6 +620,105 @@ func Test_attributesToJSON(t *testing.T) {
 	}
 }
 
+func TestRestAPI_newRequest(t *testing.T) {
+	tests := []struct {
+		name       string
+		restAPI    RestAPI
+		verb       string
+		url        string
+		body       string
+		headers    map[string]string
+		wantMethod string
+		wantURL    string
+		wantHeader map[string]string
+		wantBody   string
+		wantErr    bool
+	}{
+		{
+			name: "basic auth and headers",
+			restAPI: RestAPI{
+				AuthType:  AuthTypeBasic,
+				Username:  "admin",
+				Password:  "secret",
+				UserAgent: "custom-agent",
+			},
+			verb:    http.MethodPost,
+			url:     "https://example.com/api/users",
+			body:    `{"name":"test"}`,
+			headers: map[string]string{"Content-Type": "application/json"},
+			wantMethod: http.MethodPost,
+			wantURL:    "https://example.com/api/users",
+			wantHeader: map[string]string{
+				"Content-Type":  "application/json",
+				"User-Agent":    "custom-agent",
+				"Authorization": "Basic YWRtaW46c2VjcmV0",
+			},
+			wantBody: `{"name":"test"}`,
+		},
+		{
+			name: "bearer auth without body",
+			restAPI: RestAPI{
+				AuthType:  AuthTypeBearer,
+				Password:  "my-token",
+				UserAgent: "test-agent",
+			},
+			verb:       http.MethodGet,
+			url:        "https://example.com/api/list",
+			wantMethod: http.MethodGet,
+			wantURL:    "https://example.com/api/list",
+			wantHeader: map[string]string{
+				"User-Agent":    "test-agent",
+				"Authorization": "Bearer my-token",
+			},
+		},
+		{
+			name: "salesforce oauth auth",
+			restAPI: RestAPI{
+				AuthType:  AuthTypeSalesforceOauth,
+				Password:  "sf-token",
+				UserAgent: "test-agent",
+			},
+			verb:       http.MethodGet,
+			url:        "https://example.com/api/sf",
+			wantMethod: http.MethodGet,
+			wantURL:    "https://example.com/api/sf",
+			wantHeader: map[string]string{
+				"User-Agent":    "test-agent",
+				"Authorization": "Bearer sf-token",
+			},
+		},
+		{
+			name:    "invalid url",
+			verb:    "INVALID METHOD\n",
+			url:     "https://example.com",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := tt.restAPI.newRequest(tt.verb, tt.url, tt.body, tt.headers)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantMethod, req.Method)
+			require.Equal(t, tt.wantURL, req.URL.String())
+
+			for k, v := range tt.wantHeader {
+				require.Equal(t, v, req.Header.Get(k), "mismatched header %s", k)
+			}
+
+			if tt.wantBody != "" {
+				bodyBytes, readErr := io.ReadAll(req.Body)
+				require.NoError(t, readErr)
+				require.Equal(t, tt.wantBody, string(bodyBytes))
+			}
+		})
+	}
+}
+
 func TestRestAPI_httpRequest(t *testing.T) {
 	server := getTestServer()
 	endpoints := getFakeEndpoints()
@@ -651,6 +806,24 @@ func TestRestAPI_httpRequest(t *testing.T) {
 			body: `{"email":"test@example.com","id":"1234"}`,
 			want: endpoints[EndpointCreateOther].responseBody,
 		},
+		{
+			name: "rate limit retry succeeds",
+			restAPI: RestAPI{
+				retryWait: func(d time.Duration) {},
+			},
+			verb: http.MethodGet,
+			url:  server.URL + "/ratelimit/retry-succeeds",
+			want: `{"status":"ok"}`,
+		},
+		{
+			name: "rate limit retry exhausts max retries",
+			restAPI: RestAPI{
+				retryWait: func(d time.Duration) {},
+			},
+			verb:    http.MethodGet,
+			url:     server.URL + "/ratelimit/retry-fails",
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -666,6 +839,66 @@ func TestRestAPI_httpRequest(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("rate limit retry delays with Retry-After", func(t *testing.T) {
+		attempts := 0
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			attempts++
+			if attempts < 3 {
+				w.Header().Set("Retry-After", "2")
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write([]byte(`{"error":"rate limit exceeded"}`))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		}))
+		defer srv.Close()
+
+		var delays []time.Duration
+		r := RestAPI{
+			retryWait: func(d time.Duration) {
+				delays = append(delays, d)
+			},
+		}
+
+		res := r.httpRequest(http.MethodPost, srv.URL+"/users", `{"email":"test@example.com"}`, nil)
+		require.NoError(t, res.Err)
+		require.Equal(t, http.StatusOK, res.RespCode)
+		require.Equal(t, `{"status":"ok"}`, res.RespBody)
+		require.Equal(t, 3, attempts)
+		require.Equal(t, []time.Duration{2 * time.Second, 2 * time.Second}, delays)
+	})
+
+	t.Run("rate limit retry exponential backoff without Retry-After", func(t *testing.T) {
+		attempts := 0
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			attempts++
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"too many requests"}`))
+		}))
+		defer srv.Close()
+
+		var delays []time.Duration
+		r := RestAPI{
+			retryWait: func(d time.Duration) {
+				delays = append(delays, d)
+			},
+		}
+
+		res := r.httpRequest(http.MethodGet, srv.URL+"/users", "", nil)
+		require.Error(t, res.Err)
+		require.Equal(t, http.StatusTooManyRequests, res.RespCode)
+		require.Equal(t, `{"error":"too many requests"}`, res.RespBody)
+		require.Equal(t, MaxRetries+1, attempts)
+		require.Len(t, delays, MaxRetries)
+		for i, d := range delays {
+			minExpected := RetryInitialDelay * (1 << i)
+			maxExpected := minExpected + (minExpected / 2)
+			require.GreaterOrEqual(t, d, minExpected)
+			require.Less(t, d, maxExpected)
+		}
+	})
 }
 
 func Test_parsePathTemplate(t *testing.T) {
@@ -883,3 +1116,5 @@ func TestRestAPI_listUsersForPathWithPagination(t *testing.T) {
 		})
 	}
 }
+
+
