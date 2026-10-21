@@ -585,7 +585,7 @@ func (r *RestAPI) httpRequest(verb, url, body string, headers map[string]string)
 	}
 
 	var lastResult requestResults
-	for attempt := 0; attempt <= DefaultMaxRetries; attempt++ {
+	for attempt := range DefaultMaxRetries + 1 {
 		var req *http.Request
 		var err error
 		if body == "" {
