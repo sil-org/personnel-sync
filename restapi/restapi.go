@@ -254,7 +254,7 @@ func (r *RestAPI) requestPage(desiredAttrs []string, url string, errLog chan<- s
 	reqRes := r.httpRequest(r.ListMethod, url, "", nil)
 	if reqRes.Err != nil {
 		if reqRes.RespCode > 0 {
-			msg := fmt.Sprintf("response status code: %d url: %s response body: %s", reqRes.RespCode, url, reqRes.RespBody)
+			msg := fmt.Sprintf("response status code: %d url: %s error: %v response body: %s", reqRes.RespCode, url, reqRes.Err, reqRes.RespBody)
 			log.Print(msg)
 			errLog <- msg
 		} else {
@@ -621,7 +621,7 @@ func (r *RestAPI) httpRequest(verb, url, body string, headers map[string]string)
 		bodyBytes, readErr := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		code := resp.StatusCode
-		if readErr != nil {
+		if readErr != nil && (code != http.StatusTooManyRequests || attempt == DefaultMaxRetries) {
 			return requestResults{RespCode: code, Err: fmt.Errorf("failed to read http response body: %s", readErr)}
 		}
 		bodyString := string(bodyBytes)
