@@ -254,7 +254,7 @@ func (r *RestAPI) requestPage(desiredAttrs []string, url string, errLog chan<- s
 	reqRes := r.httpRequest(r.ListMethod, url, "", nil)
 	if reqRes.Err != nil {
 		if reqRes.RespCode > 0 {
-			msg := fmt.Sprintf("response status code: %d url: %s response body: %s", reqRes.RespCode, url, reqRes.RespBody)
+			msg := fmt.Sprintf("response status code: %d url: %s error: %v response body: %s", reqRes.RespCode, url, reqRes.Err, reqRes.RespBody)
 			log.Print(msg)
 			errLog <- msg
 		} else {
