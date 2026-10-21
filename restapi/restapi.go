@@ -586,27 +586,9 @@ func (r *RestAPI) httpRequest(verb, url, body string, headers map[string]string)
 
 	var lastResult requestResults
 	for attempt := range DefaultMaxRetries + 1 {
-		var req *http.Request
-		var err error
-		if body == "" {
-			req, err = http.NewRequest(verb, url, nil)
-		} else {
-			req, err = http.NewRequest(verb, url, strings.NewReader(body))
-		}
+		req, err := r.newRequest(verb, url, body, headers)
 		if err != nil {
 			return requestResults{Err: err}
-		}
-
-		for k, v := range headers {
-			req.Header.Set(k, v)
-		}
-		req.Header.Set("User-Agent", r.UserAgent)
-
-		switch r.AuthType {
-		case AuthTypeBasic:
-			req.SetBasicAuth(r.Username, r.Password)
-		case AuthTypeBearer, AuthTypeSalesforceOauth:
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", r.Password))
 		}
 
 		resp, err := client.Do(req)
@@ -642,6 +624,33 @@ func (r *RestAPI) httpRequest(verb, url, body string, headers map[string]string)
 	}
 
 	return lastResult
+}
+
+func (r *RestAPI) newRequest(verb, url, body string, headers map[string]string) (*http.Request, error) {
+	var req *http.Request
+	var err error
+	if body == "" {
+		req, err = http.NewRequest(verb, url, nil)
+	} else {
+		req, err = http.NewRequest(verb, url, strings.NewReader(body))
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	req.Header.Set("User-Agent", r.UserAgent)
+
+	switch r.AuthType {
+	case AuthTypeBasic:
+		req.SetBasicAuth(r.Username, r.Password)
+	case AuthTypeBearer, AuthTypeSalesforceOauth:
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", r.Password))
+	}
+
+	return req, nil
 }
 
 func retryDelay(retryAfter string, attempt int) time.Duration {
