@@ -294,6 +294,58 @@ func TestRestAPI_ListUsers(t *testing.T) {
 			wantErr: true,
 			errMsg:  "Not Authorized",
 		},
+		{
+			name: "retries on 429 and succeeds",
+			sourceConfig: internal.SourceConfig{
+				Type: internal.SourceTypeRestAPI,
+				ExtraJSON: fmt.Appendf(nil, extraJSONtemplate,
+					other.method,
+					server.URL,
+					other.resultsContainer,
+					other.authType,
+					other.username,
+					other.password,
+					other.compareAttr,
+					other.idAttr,
+				),
+			},
+			syncSet: `{"Paths":["/ratelimit/list"]}`,
+			desiredAttrs: []string{
+				"employeeID",
+				"first",
+				"last",
+				"display",
+				"username",
+				"email",
+			},
+			want: []internal.Person{
+				{
+					ID:           "10000013",
+					CompareValue: "mickey_mouse@acme.com",
+					Attributes: map[string]string{
+						"employeeID": "10000013",
+						"first":      "Mickey",
+						"last":       "Mouse",
+						"display":    "Mickey Mouse",
+						"username":   "MICKEY_MOUSE",
+						"email":      "mickey_mouse@acme.com",
+					},
+				},
+				{
+					ID:           "10000011",
+					CompareValue: "donald_duck@acme.com",
+					Attributes: map[string]string{
+						"employeeID": "10000011",
+						"first":      "Donald",
+						"last":       "Duck",
+						"display":    "Donald Duck",
+						"username":   "DONALD_DUCK",
+						"email":      "donald_duck@acme.com",
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -654,6 +706,24 @@ func TestRestAPI_httpRequest(t *testing.T) {
 			body: `{"email":"test@example.com","id":"1234"}`,
 			want: endpoints[EndpointCreateOther].responseBody,
 		},
+		{
+			name: "rate limit retry succeeds",
+			restAPI: RestAPI{
+				retryWait: func(d time.Duration) {},
+			},
+			verb: http.MethodGet,
+			url:  server.URL + "/ratelimit/retry-succeeds",
+			want: `{"status":"ok"}`,
+		},
+		{
+			name: "rate limit retry exhausts max retries",
+			restAPI: RestAPI{
+				retryWait: func(d time.Duration) {},
+			},
+			verb:    http.MethodGet,
+			url:     server.URL + "/ratelimit/retry-fails",
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -669,6 +739,66 @@ func TestRestAPI_httpRequest(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("rate limit retry delays with Retry-After", func(t *testing.T) {
+		attempts := 0
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			attempts++
+			if attempts < 3 {
+				w.Header().Set("Retry-After", "2")
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write([]byte(`{"error":"rate limit exceeded"}`))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		}))
+		defer srv.Close()
+
+		var delays []time.Duration
+		r := RestAPI{
+			retryWait: func(d time.Duration) {
+				delays = append(delays, d)
+			},
+		}
+
+		res := r.httpRequest(http.MethodPost, srv.URL+"/users", `{"email":"test@example.com"}`, nil)
+		require.NoError(t, res.Err)
+		require.Equal(t, http.StatusOK, res.RespCode)
+		require.Equal(t, `{"status":"ok"}`, res.RespBody)
+		require.Equal(t, 3, attempts)
+		require.Equal(t, []time.Duration{2 * time.Second, 2 * time.Second}, delays)
+	})
+
+	t.Run("rate limit retry exponential backoff without Retry-After", func(t *testing.T) {
+		attempts := 0
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			attempts++
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"too many requests"}`))
+		}))
+		defer srv.Close()
+
+		var delays []time.Duration
+		r := RestAPI{
+			retryWait: func(d time.Duration) {
+				delays = append(delays, d)
+			},
+		}
+
+		res := r.httpRequest(http.MethodGet, srv.URL+"/users", "", nil)
+		require.Error(t, res.Err)
+		require.Equal(t, http.StatusTooManyRequests, res.RespCode)
+		require.Equal(t, `{"error":"too many requests"}`, res.RespBody)
+		require.Equal(t, DefaultMaxRetries+1, attempts)
+		require.Len(t, delays, DefaultMaxRetries)
+		for i, d := range delays {
+			minExpected := DefaultRetryInitialDelay * (1 << i)
+			maxExpected := minExpected + (minExpected / 2)
+			require.GreaterOrEqual(t, d, minExpected)
+			require.Less(t, d, maxExpected)
+		}
+	})
 }
 
 func Test_parsePathTemplate(t *testing.T) {
@@ -887,93 +1017,4 @@ func TestRestAPI_listUsersForPathWithPagination(t *testing.T) {
 	}
 }
 
-func TestRestAPI_httpRequest_RateLimitRetry(t *testing.T) {
-	t.Run("succeeds after 429 with Retry-After seconds", func(t *testing.T) {
-		attempts := 0
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			attempts++
-			if attempts < 3 {
-				w.Header().Set("Retry-After", "2")
-				w.WriteHeader(http.StatusTooManyRequests)
-				_, _ = w.Write([]byte(`{"error":"rate limit exceeded"}`))
-				return
-			}
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":"ok"}`))
-		}))
-		defer srv.Close()
-
-		var delays []time.Duration
-		r := RestAPI{
-			retryWait: func(d time.Duration) {
-				delays = append(delays, d)
-			},
-		}
-
-		res := r.httpRequest(http.MethodPost, srv.URL+"/users", `{"email":"test@example.com"}`, nil)
-		require.NoError(t, res.Err)
-		require.Equal(t, http.StatusOK, res.RespCode)
-		require.Equal(t, `{"status":"ok"}`, res.RespBody)
-		require.Equal(t, 3, attempts)
-		require.Equal(t, []time.Duration{2 * time.Second, 2 * time.Second}, delays)
-	})
-
-	t.Run("fails after exhausting max retries on 429", func(t *testing.T) {
-		attempts := 0
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			attempts++
-			w.WriteHeader(http.StatusTooManyRequests)
-			_, _ = w.Write([]byte(`{"error":"too many requests"}`))
-		}))
-		defer srv.Close()
-
-		var delays []time.Duration
-		r := RestAPI{
-			retryWait: func(d time.Duration) {
-				delays = append(delays, d)
-			},
-		}
-
-		res := r.httpRequest(http.MethodGet, srv.URL+"/users", "", nil)
-		require.Error(t, res.Err)
-		require.Equal(t, http.StatusTooManyRequests, res.RespCode)
-		require.Equal(t, `{"error":"too many requests"}`, res.RespBody)
-		require.Equal(t, DefaultMaxRetries+1, attempts)
-		require.Len(t, delays, DefaultMaxRetries)
-		for i, d := range delays {
-			minExpected := DefaultRetryInitialDelay * (1 << i)
-			maxExpected := minExpected + (minExpected / 2)
-			require.GreaterOrEqual(t, d, minExpected)
-			require.Less(t, d, maxExpected)
-		}
-	})
-
-	t.Run("ListUsers retries on 429 and succeeds", func(t *testing.T) {
-		attempts := 0
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			attempts++
-			if attempts == 1 {
-				w.Header().Set("Retry-After", "1")
-				w.WriteHeader(http.StatusTooManyRequests)
-				_, _ = w.Write([]byte(`{"error":"rate limit"}`))
-				return
-			}
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`[{"id":"1","email":"user1@example.com"}]`))
-		}))
-		defer srv.Close()
-
-		r := New()
-		r.BaseURL = srv.URL
-		r.CompareAttribute = "email"
-		r.setConfig = SetConfig{Paths: []string{"/users"}}
-		r.retryWait = func(d time.Duration) {}
-
-		people, err := r.ListUsers([]string{"email"})
-		require.NoError(t, err)
-		require.Len(t, people, 1)
-		require.Equal(t, "user1@example.com", people[0].CompareValue)
-		require.Equal(t, 2, attempts)
-	})
-}
 

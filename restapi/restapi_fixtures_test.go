@@ -23,10 +23,13 @@ type fakeEndpoint struct {
 }
 
 const (
-	EndpointListWorkday    = "list workday"
-	EndpointListOther      = "list other"
-	EndpointListSalesforce = "list salesforce"
-	EndpointCreateOther    = "create other"
+	EndpointListWorkday            = "list workday"
+	EndpointListOther              = "list other"
+	EndpointListSalesforce         = "list salesforce"
+	EndpointCreateOther            = "create other"
+	EndpointRateLimitRetrySucceeds = "ratelimit retry succeeds"
+	EndpointRateLimitRetryFails    = "ratelimit retry fails"
+	EndpointRateLimitList          = "ratelimit list"
 )
 
 const extraJSONtemplate = `{
@@ -168,12 +171,42 @@ func getFakeEndpoints() map[string]fakeEndpoint {
 			compareAttr:      "",
 			resultsContainer: "",
 		},
+		EndpointRateLimitRetrySucceeds: {
+			path:             "/ratelimit/retry-succeeds",
+			method:           http.MethodGet,
+			status:           http.StatusOK,
+			responseBody:     `{"status":"ok"}`,
+			authType:         "",
+			compareAttr:      "",
+			resultsContainer: "",
+		},
+		EndpointRateLimitRetryFails: {
+			path:             "/ratelimit/retry-fails",
+			method:           http.MethodGet,
+			status:           http.StatusTooManyRequests,
+			responseBody:     `{"error":"too many requests"}`,
+			authType:         "",
+			compareAttr:      "",
+			resultsContainer: "",
+		},
+		EndpointRateLimitList: {
+			path:             "/ratelimit/list",
+			method:           http.MethodGet,
+			status:           http.StatusOK,
+			responseBody:     otherUsersJSON,
+			authType:         AuthTypeBearer,
+			password:         "bearer_token",
+			compareAttr:      "email",
+			idAttr:           "employeeID",
+			resultsContainer: "",
+		},
 	}
 }
 
 func getTestServer() *httptest.Server {
 	mux := http.NewServeMux()
 	endpoints := getFakeEndpoints()
+	ratelimitAttempts := make(map[string]int)
 	for name := range endpoints {
 		e := endpoints[name]
 		status := e.status
@@ -208,6 +241,26 @@ func getTestServer() *httptest.Server {
 			pageParam := req.URL.Query()["page"]
 			if len(pageParam) > 0 && pageParam[0] != "1" {
 				responseBody = "{}"
+			}
+
+			if e.path == "/ratelimit/retry-succeeds" {
+				ratelimitAttempts[e.path]++
+				if ratelimitAttempts[e.path] < 3 {
+					w.Header().Set("Retry-After", "1")
+					w.WriteHeader(http.StatusTooManyRequests)
+					_, _ = io.WriteString(w, `{"error":"rate limit exceeded"}`)
+					return
+				}
+			}
+
+			if e.path == "/ratelimit/list" {
+				ratelimitAttempts[e.path]++
+				if ratelimitAttempts[e.path] == 1 {
+					w.Header().Set("Retry-After", "1")
+					w.WriteHeader(http.StatusTooManyRequests)
+					_, _ = io.WriteString(w, `{"error":"rate limit exceeded"}`)
+					return
+				}
 			}
 
 			w.WriteHeader(status)
