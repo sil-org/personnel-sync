@@ -621,7 +621,7 @@ func (r *RestAPI) httpRequest(verb, url, body string, headers map[string]string)
 		bodyBytes, readErr := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		code := resp.StatusCode
-		if readErr != nil {
+		if readErr != nil && (code != http.StatusTooManyRequests || attempt == DefaultMaxRetries) {
 			return requestResults{RespCode: code, Err: fmt.Errorf("failed to read http response body: %s", readErr)}
 		}
 		bodyString := string(bodyBytes)
