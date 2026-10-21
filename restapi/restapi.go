@@ -585,7 +585,7 @@ func (r *RestAPI) httpRequest(verb, url, body string, headers map[string]string)
 	}
 
 	var lastResult requestResults
-	for attempt := range DefaultMaxRetries + 1 {
+	for attempt := range MaxRetries + 1 {
 		req, err := r.newRequest(verb, url, body, headers)
 		if err != nil {
 			return requestResults{Err: err}
@@ -603,14 +603,14 @@ func (r *RestAPI) httpRequest(verb, url, body string, headers map[string]string)
 		bodyBytes, readErr := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		code := resp.StatusCode
-		if readErr != nil && (code != http.StatusTooManyRequests || attempt == DefaultMaxRetries) {
+		if readErr != nil && (code != http.StatusTooManyRequests || attempt == MaxRetries) {
 			return requestResults{RespCode: code, Err: fmt.Errorf("failed to read http response body: %s", readErr)}
 		}
 		bodyString := string(bodyBytes)
 
-		if code == http.StatusTooManyRequests && attempt < DefaultMaxRetries {
+		if code == http.StatusTooManyRequests && attempt < MaxRetries {
 			delay := retryDelay(resp.Header.Get("Retry-After"), attempt)
-			log.Printf("rate limited (HTTP 429) on %s %s, retrying in %v (attempt %d/%d)", verb, url, delay, attempt+1, DefaultMaxRetries)
+			log.Printf("rate limited (HTTP 429) on %s %s, retrying in %v (attempt %d/%d)", verb, url, delay, attempt+1, MaxRetries)
 			waitFn(delay)
 			lastResult = requestResults{RespBody: bodyString, RespCode: code, Err: errors.New(resp.Status)}
 			continue
@@ -667,7 +667,7 @@ func retryDelay(retryAfter string, attempt int) time.Duration {
 		}
 	}
 
-	baseDelay := DefaultRetryInitialDelay * (1 << attempt)
+	baseDelay := RetryInitialDelay * (1 << attempt)
 	jitter := time.Duration(rand.Int63n(int64(baseDelay / 2)))
 	return baseDelay + jitter
 }

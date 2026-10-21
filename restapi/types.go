@@ -9,8 +9,8 @@ import (
 const (
 	DefaultHttpTimeoutSeconds = 45
 	httpTimeoutEnv            = "HTTP_TIMEOUT_SECONDS"
-	DefaultMaxRetries         = 3
-	DefaultRetryInitialDelay  = time.Second
+	MaxRetries                = 3
+	RetryInitialDelay         = time.Second
 )
 
 type RestAPI struct {

@@ -890,10 +890,10 @@ func TestRestAPI_httpRequest(t *testing.T) {
 		require.Error(t, res.Err)
 		require.Equal(t, http.StatusTooManyRequests, res.RespCode)
 		require.Equal(t, `{"error":"too many requests"}`, res.RespBody)
-		require.Equal(t, DefaultMaxRetries+1, attempts)
-		require.Len(t, delays, DefaultMaxRetries)
+		require.Equal(t, MaxRetries+1, attempts)
+		require.Len(t, delays, MaxRetries)
 		for i, d := range delays {
-			minExpected := DefaultRetryInitialDelay * (1 << i)
+			minExpected := RetryInitialDelay * (1 << i)
 			maxExpected := minExpected + (minExpected / 2)
 			require.GreaterOrEqual(t, d, minExpected)
 			require.Less(t, d, maxExpected)
