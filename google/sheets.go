@@ -10,7 +10,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/sil-org/personnel-sync/v8/internal"
 )
 
 const DefaultSheetName = "Sheet1"
@@ -107,14 +107,14 @@ func (g *GoogleSheets) ForSet(syncSetJson json.RawMessage) error {
 	return nil
 }
 
-func (g *GoogleSheets) ListUsers(desiredAttrs []string) ([]internal.Person, error) {
+func (g *GoogleSheets) ListUsers(ctx context.Context, desiredAttrs []string) ([]internal.Person, error) {
 	if g.DestinationConfig.Type != "" {
 		// if this sheet is a destination, don't return the list of users since we don't have logic to do incremental
 		// updates to the sheet
 		return nil, nil
 	}
 
-	sheetData, err := g.readSheet()
+	sheetData, err := g.readSheet(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("googleSheets ListUsers error %w", err)
 	}
@@ -155,6 +155,7 @@ func getPersonsFromSheetData(sheetData [][]any, desiredAttrs []string, compareAt
 }
 
 func (g *GoogleSheets) ApplyChangeSet(
+	ctx context.Context,
 	changes internal.ChangeSet,
 	eventLog chan<- internal.EventLogItem,
 ) internal.ChangeResults {
@@ -166,7 +167,7 @@ func (g *GoogleSheets) ApplyChangeSet(
 		return internal.ChangeResults{}
 	}
 
-	sheetData, err := g.readSheet()
+	sheetData, err := g.readSheet(ctx)
 	if err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ALERT,
@@ -175,7 +176,7 @@ func (g *GoogleSheets) ApplyChangeSet(
 		return internal.ChangeResults{}
 	}
 
-	if err := g.clearSheet(sheetData); err != nil {
+	if err := g.clearSheet(ctx, sheetData); err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ALERT,
 			Message: fmt.Sprintf("unable to clear sheet, error: %v", err),
@@ -183,7 +184,8 @@ func (g *GoogleSheets) ApplyChangeSet(
 		return internal.ChangeResults{}
 	}
 
-	if err := g.updateSheet(getHeaderFromSheetData(sheetData), changes.Create); err != nil {
+	// The sheet is now cleared, so finish writing it even if ctx is canceled, rather than leave it empty
+	if err := g.updateSheet(context.WithoutCancel(ctx), getHeaderFromSheetData(sheetData), changes.Create); err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ALERT,
 			Message: fmt.Sprintf("unable to update sheet, error: %v", err),
@@ -194,9 +196,9 @@ func (g *GoogleSheets) ApplyChangeSet(
 	return internal.ChangeResults{Created: uint64(len(changes.Create))}
 }
 
-func (g *GoogleSheets) readSheet() ([][]any, error) {
+func (g *GoogleSheets) readSheet(ctx context.Context) ([][]any, error) {
 	readRange := fmt.Sprintf("%s!A1:ZZ", g.SheetsSyncSet.SheetName)
-	resp, err := g.Service.Spreadsheets.Values.Get(g.SheetsSyncSet.SheetID, readRange).Do()
+	resp, err := g.Service.Spreadsheets.Values.Get(g.SheetsSyncSet.SheetID, readRange).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("unable to retrieve data from sheet '%s', error: %v", g.SheetsSyncSet.SheetName, err)
 	}
@@ -218,7 +220,7 @@ func getHeaderFromSheetData(sheetData [][]any) map[int]string {
 	return header
 }
 
-func (g *GoogleSheets) clearSheet(data [][]any) error {
+func (g *GoogleSheets) clearSheet(ctx context.Context, data [][]any) error {
 	for i, row := range data {
 		if i == 0 {
 			continue
@@ -234,14 +236,14 @@ func (g *GoogleSheets) clearSheet(data [][]any) error {
 	updateRange := fmt.Sprintf("%s!A1", g.SheetsSyncSet.SheetName)
 	_, err := g.Service.Spreadsheets.Values.
 		Update(g.SheetsSyncSet.SheetID, updateRange, v).
-		ValueInputOption("RAW").Do()
+		ValueInputOption("RAW").Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("unable to clear sheet, error: %v", err)
 	}
 	return nil
 }
 
-func (g *GoogleSheets) updateSheet(header map[int]string, persons []internal.Person) error {
+func (g *GoogleSheets) updateSheet(ctx context.Context, header map[int]string, persons []internal.Person) error {
 	table := makeSheetDataFromPersons(header, persons)
 	v := &sheets.ValueRange{
 		Values: table,
@@ -250,7 +252,7 @@ func (g *GoogleSheets) updateSheet(header map[int]string, persons []internal.Per
 	updateRange := fmt.Sprintf("%s!A2:ZZ", g.SheetsSyncSet.SheetName)
 	_, err := g.Service.Spreadsheets.Values.
 		Update(g.SheetsSyncSet.SheetID, updateRange, v).
-		ValueInputOption("RAW").Do()
+		ValueInputOption("RAW").Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("unable to update sheet, error: %v", err)
 	}

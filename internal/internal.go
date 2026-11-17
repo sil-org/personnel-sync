@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sil-org/personnel-sync/v7/alert"
+	"github.com/sil-org/personnel-sync/v8/alert"
 )
 
 const (
@@ -183,8 +184,11 @@ func processExpressions(logger *log.Logger, config Config, person Person) Person
 //   - it gets the list of people from the destination
 //   - it generates the lists of people to change, update and delete
 //   - if dryRun is true, it prints those lists, otherwise it makes the associated changes
-func RunSyncSet(logger *log.Logger, source Source, destination Destination, config Config) error {
-	sourcePeople, err := source.ListUsers(GetSourceAttributes(config.AttributeMap))
+//
+// If ctx is done while changes are being applied, the destination stops starting new changes and RunSyncSet returns an
+// error saying the changes may be incomplete.
+func RunSyncSet(ctx context.Context, logger *log.Logger, source Source, destination Destination, config Config) error {
+	sourcePeople, err := source.ListUsers(ctx, GetSourceAttributes(config.AttributeMap))
 	if err != nil {
 		return err
 	}
@@ -199,7 +203,7 @@ func RunSyncSet(logger *log.Logger, source Source, destination Destination, conf
 		return err
 	}
 
-	destinationPeople, err := destination.ListUsers(GetDestinationAttributes(config.AttributeMap))
+	destinationPeople, err := destination.ListUsers(ctx, GetDestinationAttributes(config.AttributeMap))
 	if err != nil {
 		return err
 	}
@@ -231,7 +235,7 @@ func RunSyncSet(logger *log.Logger, source Source, destination Destination, conf
 	eventLog := make(chan EventLogItem, 50)
 	go processEventLog(logger, config.Alert, eventLog)
 
-	results := destination.ApplyChangeSet(changeSet, eventLog)
+	results := destination.ApplyChangeSet(ctx, changeSet, eventLog)
 
 	for range 100 {
 		time.Sleep(time.Millisecond * 10)
@@ -243,6 +247,10 @@ func RunSyncSet(logger *log.Logger, source Source, destination Destination, conf
 
 	logger.Printf("Sync results: %v users added, %v users updated, %v users removed\n",
 		results.Created, results.Updated, results.Deleted)
+
+	if ctx.Err() != nil {
+		return fmt.Errorf("sync interrupted, changes may be incomplete: %w", context.Cause(ctx))
+	}
 
 	return nil
 }
@@ -301,11 +309,11 @@ func (e *EmptyDestination) ForSet(syncSetJson json.RawMessage) error {
 	return nil
 }
 
-func (e *EmptyDestination) ListUsers(desiredAttrs []string) ([]Person, error) {
+func (e *EmptyDestination) ListUsers(ctx context.Context, desiredAttrs []string) ([]Person, error) {
 	return []Person{}, nil
 }
 
-func (e *EmptyDestination) ApplyChangeSet(changes ChangeSet, eventLog chan<- EventLogItem) ChangeResults {
+func (e *EmptyDestination) ApplyChangeSet(ctx context.Context, changes ChangeSet, eventLog chan<- EventLogItem) ChangeResults {
 	return ChangeResults{}
 }
 
@@ -327,7 +335,7 @@ func (e *EmptySource) ForSet(syncSetJson json.RawMessage) error {
 	return nil
 }
 
-func (e *EmptySource) ListUsers(desiredAttrs []string) ([]Person, error) {
+func (e *EmptySource) ListUsers(ctx context.Context, desiredAttrs []string) ([]Person, error) {
 	return []Person{}, nil
 }
 
@@ -369,18 +377,36 @@ func (b *BatchTimer) setEndTime() {
 // WaitOnBatch increments the Counter and then if fewer than BatchSize have been dealt with, just returns without doing
 // anything Otherwise, sleeps until the batch time has expired (i.e. current time is past endTime). If this last process
 // occurs, then it ends by resetting the batch's times and counter.
-func (b *BatchTimer) WaitOnBatch() {
+//
+// If ctx is done, WaitOnBatch returns immediately. Callers should check ctx before starting the next item.
+func (b *BatchTimer) WaitOnBatch(ctx context.Context) {
 	b.Counter++
 	if b.Counter < b.BatchSize {
 		return
 	}
 
-	for {
-		currTime := time.Now()
-		if currTime.After(b.endTime) {
-			break
-		}
-		time.Sleep(time.Second)
+	if Sleep(ctx, time.Until(b.endTime)) != nil {
+		return
 	}
 	b.Init(b.BatchSize, b.SecondsPerBatch)
+}
+
+// Sleep pauses for duration d, or until ctx is done, whichever comes first. It returns context.Cause(ctx) if ctx ended
+// the sleep (or was already done), otherwise nil.
+func Sleep(ctx context.Context, d time.Duration) error {
+	if ctx.Err() != nil {
+		return context.Cause(ctx)
+	}
+	if d <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	case <-timer.C:
+		return nil
+	}
 }

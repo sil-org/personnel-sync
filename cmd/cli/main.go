@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
 
-	sync "github.com/sil-org/personnel-sync/v7"
+	sync "github.com/sil-org/personnel-sync/v8"
 )
 
 func main() {
@@ -11,7 +14,12 @@ func main() {
 	if len(os.Args) > 1 {
 		configFile = os.Args[1]
 	}
-	if err := sync.RunSync(configFile); err != nil {
+
+	// Stop the sync cleanly (and report on it) on Ctrl-C or SIGTERM
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	err := sync.RunSync(ctx, configFile)
+	stop()
+	if err != nil {
 		os.Exit(1)
 	}
 	os.Exit(0)

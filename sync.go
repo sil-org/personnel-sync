@@ -1,22 +1,35 @@
 package personnel_sync
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"time"
 
-	"github.com/sil-org/personnel-sync/v7/alert"
-	"github.com/sil-org/personnel-sync/v7/google"
-	"github.com/sil-org/personnel-sync/v7/internal"
-	"github.com/sil-org/personnel-sync/v7/restapi"
-	"github.com/sil-org/personnel-sync/v7/webhelpdesk"
+	"github.com/sil-org/personnel-sync/v8/alert"
+	"github.com/sil-org/personnel-sync/v8/google"
+	"github.com/sil-org/personnel-sync/v8/internal"
+	"github.com/sil-org/personnel-sync/v8/restapi"
+	"github.com/sil-org/personnel-sync/v8/webhelpdesk"
 
 	"github.com/getsentry/sentry-go"
 )
 
-func RunSync(configFile string) error {
+// maxReportingMargin is the most time RunSync reserves before ctx's deadline for reporting (logging and alerts).
+const maxReportingMargin = 10 * time.Second
+
+// errReportingMargin is the cancellation cause when RunSync stops early to leave time for reporting.
+var errReportingMargin = errors.New("stopped early to leave time for reporting before the deadline")
+
+// RunSync loads the config file and runs every enabled sync set. The ctx bounds all outbound requests. If ctx has a
+// deadline (such as a Lambda timeout), RunSync stops sync work shortly before it, so that it can still log and send
+// alerts about the interrupted sync. Alerts themselves are not bound by ctx.
+func RunSync(ctx context.Context, configFile string) error {
+	ctx, cancel := withReportingMargin(ctx)
+	defer cancel()
+
 	log.SetOutput(os.Stdout)
 	log.SetFlags(0)
 	log.Printf("Personnel sync started at %s", time.Now().UTC().Format(time.RFC1123Z))
@@ -93,6 +106,14 @@ func RunSync(configFile string) error {
 			continue
 		}
 
+		if ctx.Err() != nil {
+			err := fmt.Errorf(`Sync stopped before syncSet "%s" (%d of %d): %w`,
+				syncSet.Name, i+1, len(config.SyncSets), context.Cause(ctx))
+			log.Println(err)
+			alertError = errors.Join(alertError, err)
+			break
+		}
+
 		if syncSet.Name == "" {
 			err := errors.New("configuration contains a set with no name")
 			alertError = errors.Join(alertError, err)
@@ -112,7 +133,7 @@ func RunSync(configFile string) error {
 			alertError = handleSyncError(syncSetLogger, err, alertError)
 		}
 
-		if err = internal.RunSyncSet(syncSetLogger, source, destination, config); err != nil {
+		if err = internal.RunSyncSet(ctx, syncSetLogger, source, destination, config); err != nil {
 			err = fmt.Errorf(`Sync failed with error on syncSet "%s": %w`, syncSet.Name, err)
 			alertError = handleSyncError(syncSetLogger, err, alertError)
 		}
@@ -125,6 +146,18 @@ func RunSync(configFile string) error {
 
 	log.Printf("Personnel sync completed at %s", time.Now().UTC().Format(time.RFC1123Z))
 	return nil
+}
+
+// withReportingMargin returns a context whose deadline is a little earlier than ctx's, leaving time to report on an
+// interrupted sync. The margin is maxReportingMargin, or a tenth of the remaining time if that is shorter. If ctx has
+// no deadline, the returned context has none either.
+func withReportingMargin(ctx context.Context) (context.Context, context.CancelFunc) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return context.WithCancel(ctx)
+	}
+	margin := min(maxReportingMargin, time.Until(deadline)/10)
+	return context.WithDeadlineCause(ctx, deadline.Add(-margin), errReportingMargin)
 }
 
 func handleSyncError(logger *log.Logger, err, alert error) error {

@@ -19,7 +19,7 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/googleapi"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/sil-org/personnel-sync/v8/internal"
 )
 
 const MaxQuerySize = 10000
@@ -211,10 +211,10 @@ func (g *GoogleContacts) ForSet(syncSetJson json.RawMessage) error {
 }
 
 // ListUsers returns all users (contacts) in the destination
-func (g *GoogleContacts) ListUsers(desiredAttrs []string) ([]internal.Person, error) {
+func (g *GoogleContacts) ListUsers(ctx context.Context, desiredAttrs []string) ([]internal.Person, error) {
 	href := fmt.Sprintf("https://www.google.com/m8/feeds/contacts/%s/full?max-results=%d",
 		g.GoogleConfig.Domain, MaxQuerySize)
-	body, err := g.httpRequest(http.MethodGet, href, "", map[string]string{})
+	body, err := g.httpRequest(ctx, http.MethodGet, href, "", map[string]string{})
 	if err != nil {
 		syncErr := internal.SyncError{
 			Message:   fmt.Errorf("failed to retrieve user list: %w", err),
@@ -240,6 +240,7 @@ func (g *GoogleContacts) ListUsers(desiredAttrs []string) ([]internal.Person, er
 
 // ApplyChangeSet executes all of the configured sync tasks (create, update, and/or delete)
 func (g *GoogleContacts) ApplyChangeSet(
+	ctx context.Context,
 	changes internal.ChangeSet,
 	eventLog chan<- internal.EventLogItem,
 ) internal.ChangeResults {
@@ -253,9 +254,12 @@ func (g *GoogleContacts) ApplyChangeSet(
 		log.Println("Contact creation is disabled.")
 	} else {
 		for _, toCreate := range changes.Create {
+			if ctx.Err() != nil {
+				break
+			}
 			wg.Add(1)
-			go g.addContact(toCreate, &results.Created, &wg, eventLog)
-			batchTimer.WaitOnBatch()
+			go g.addContact(ctx, toCreate, &results.Created, &wg, eventLog)
+			batchTimer.WaitOnBatch(ctx)
 		}
 	}
 
@@ -263,9 +267,12 @@ func (g *GoogleContacts) ApplyChangeSet(
 		log.Println("Contact update is disabled.")
 	} else {
 		for _, toUpdate := range changes.Update {
+			if ctx.Err() != nil {
+				break
+			}
 			wg.Add(1)
-			go g.updateContact(toUpdate, &results.Updated, &wg, eventLog)
-			batchTimer.WaitOnBatch()
+			go g.updateContact(ctx, toUpdate, &results.Updated, &wg, eventLog)
+			batchTimer.WaitOnBatch(ctx)
 		}
 	}
 
@@ -273,9 +280,12 @@ func (g *GoogleContacts) ApplyChangeSet(
 		log.Println("Contact deletion is disabled.")
 	} else {
 		for _, toUpdate := range changes.Delete {
+			if ctx.Err() != nil {
+				break
+			}
 			wg.Add(1)
-			go g.deleteContact(toUpdate, &results.Deleted, &wg, eventLog)
-			batchTimer.WaitOnBatch()
+			go g.deleteContact(ctx, toUpdate, &results.Deleted, &wg, eventLog)
+			batchTimer.WaitOnBatch(ctx)
 		}
 	}
 
@@ -284,15 +294,15 @@ func (g *GoogleContacts) ApplyChangeSet(
 	return results
 }
 
-func (g *GoogleContacts) httpRequest(verb, url, body string, headers map[string]string) (string,
+func (g *GoogleContacts) httpRequest(ctx context.Context, verb, url, body string, headers map[string]string) (string,
 	error,
 ) {
 	var req *http.Request
 	var err error
 	if body == "" {
-		req, err = http.NewRequest(verb, url, nil)
+		req, err = http.NewRequestWithContext(ctx, verb, url, nil)
 	} else {
-		req, err = http.NewRequest(verb, url, bytes.NewBuffer([]byte(body)))
+		req, err = http.NewRequestWithContext(ctx, verb, url, bytes.NewBuffer([]byte(body)))
 	}
 	if err != nil {
 		return "", err
@@ -411,6 +421,7 @@ func findPrimaryPhoneNumber(entry Contact) string {
 }
 
 func (g *GoogleContacts) addContact(
+	ctx context.Context,
 	person internal.Person,
 	counter *uint64,
 	wg *sync.WaitGroup,
@@ -430,7 +441,7 @@ func (g *GoogleContacts) addContact(
 	}
 
 	headers := map[string]string{"Content-Type": "application/atom+xml"}
-	if _, err := g.httpRequest(http.MethodPost, href, body, headers); err != nil {
+	if _, err := g.httpRequest(ctx, http.MethodPost, href, body, headers); err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ERR,
 			Message: fmt.Sprintf("unable to insert %s in Google contacts: %s", person.CompareValue, err),
@@ -553,6 +564,7 @@ func getPhonesFromAttributes(attributes map[string]string) []phoneNumberMarshal 
 }
 
 func (g *GoogleContacts) updateContact(
+	ctx context.Context,
 	person internal.Person,
 	counter *uint64,
 	wg *sync.WaitGroup,
@@ -562,7 +574,7 @@ func (g *GoogleContacts) updateContact(
 
 	url := person.ID
 
-	contact, err := g.getContact(url)
+	contact, err := g.getContact(ctx, url)
 	if err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ERR,
@@ -581,7 +593,7 @@ func (g *GoogleContacts) updateContact(
 		return
 	}
 
-	_, err = g.httpRequest(http.MethodPut, url, body, map[string]string{
+	_, err = g.httpRequest(ctx, http.MethodPut, url, body, map[string]string{
 		"If-Match":     contact.Etag,
 		"Content-Type": "application/atom+xml",
 	})
@@ -596,8 +608,8 @@ func (g *GoogleContacts) updateContact(
 	atomic.AddUint64(counter, 1)
 }
 
-func (g *GoogleContacts) getContact(url string) (Contact, error) {
-	existingContact, err := g.httpRequest(http.MethodGet, url, "", map[string]string{})
+func (g *GoogleContacts) getContact(ctx context.Context, url string) (Contact, error) {
+	existingContact, err := g.httpRequest(ctx, http.MethodGet, url, "", map[string]string{})
 	if err != nil {
 		return Contact{}, fmt.Errorf("GET failed: %s", err)
 	}
@@ -612,6 +624,7 @@ func (g *GoogleContacts) getContact(url string) (Contact, error) {
 }
 
 func (g *GoogleContacts) deleteContact(
+	ctx context.Context,
 	person internal.Person,
 	counter *uint64,
 	wg *sync.WaitGroup,
@@ -621,7 +634,7 @@ func (g *GoogleContacts) deleteContact(
 
 	url := person.ID
 
-	contact, err := g.getContact(url)
+	contact, err := g.getContact(ctx, url)
 	if err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ERR,
@@ -630,7 +643,7 @@ func (g *GoogleContacts) deleteContact(
 		return
 	}
 
-	_, err = g.httpRequest(http.MethodDelete, url, "", map[string]string{
+	_, err = g.httpRequest(ctx, http.MethodDelete, url, "", map[string]string{
 		"If-Match": contact.Etag,
 	})
 	if err != nil {

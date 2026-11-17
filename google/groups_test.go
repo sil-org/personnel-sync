@@ -7,13 +7,14 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	admin "google.golang.org/api/admin/directory/v1"
 	"google.golang.org/api/option"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/sil-org/personnel-sync/v8/internal"
 )
 
 func TestGoogleGroups_ApplyChangeSet(t *testing.T) {
@@ -66,7 +67,7 @@ func TestGoogleGroups_ApplyChangeSet(t *testing.T) {
 				t.Fatalf("Failed to get new googleGroups instance, error: %s", err.Error())
 			}
 			eventLog := make(chan internal.EventLogItem, 50)
-			if got := g.ApplyChangeSet(tt.args.changes, eventLog); !reflect.DeepEqual(got, tt.want) {
+			if got := g.ApplyChangeSet(t.Context(), tt.args.changes, eventLog); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("GoogleGroups.ApplyChangeSet() = %v, want %v", got, tt.want)
 			}
 			close(eventLog)
@@ -114,7 +115,7 @@ func TestGoogleGroups_ListUsers(t *testing.T) {
 	}`)
 	require.NoError(t, g.ForSet(syncSetJSON))
 
-	users, err := g.ListUsers([]string{"Email"})
+	users, err := g.ListUsers(t.Context(), []string{"Email"})
 	require.NoError(t, err)
 	require.Equal(t, []internal.Person{
 		{
@@ -176,7 +177,7 @@ func TestGoogleGroups_ApplyChangeSet_ExtraMembersNotReAdded(t *testing.T) {
 	g.foundExtraMembers = []string{"Google_Admin@sil.org", "overlap_extra@sil.org"}
 
 	eventLog := make(chan internal.EventLogItem, 50)
-	results := g.ApplyChangeSet(internal.ChangeSet{
+	results := g.ApplyChangeSet(t.Context(), internal.ChangeSet{
 		Create: []internal.Person{
 			{CompareValue: "new_source_user@sil.org"},
 			{CompareValue: "overlap_extra@sil.org"},
@@ -188,3 +189,36 @@ func TestGoogleGroups_ApplyChangeSet_ExtraMembersNotReAdded(t *testing.T) {
 	require.ElementsMatch(t, []string{"new_source_user@sil.org", "missing_extra@sil.org"}, insertedEmails)
 }
 
+
+func TestGoogleGroups_ApplyChangeSetCanceled(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	adminSvc, err := admin.NewService(t.Context(), option.WithEndpoint(server.URL), option.WithHTTPClient(server.Client()))
+	require.NoError(t, err)
+
+	g := &GoogleGroups{AdminService: *adminSvc, BatchSize: 10, BatchDelaySeconds: 1}
+	require.NoError(t, g.ForSet(json.RawMessage(`{"GroupEmail": "test_group@groups.sil.org"}`)))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	eventLog := make(chan internal.EventLogItem, 50)
+	results := g.ApplyChangeSet(ctx, internal.ChangeSet{
+		Create: []internal.Person{{CompareValue: "a@sil.org"}, {CompareValue: "b@sil.org"}},
+		Delete: []internal.Person{{CompareValue: "c@sil.org"}},
+	}, eventLog)
+	close(eventLog)
+
+	require.Equal(t, internal.ChangeResults{}, results)
+	require.Zero(t, requests.Load(), "no requests should be sent after ctx is canceled")
+
+	_, err = g.ListUsers(ctx, []string{"Email"})
+	// SyncError doesn't implement Unwrap, so check the message rather than errors.Is
+	require.ErrorContains(t, err, context.Canceled.Error())
+	require.Zero(t, requests.Load())
+}

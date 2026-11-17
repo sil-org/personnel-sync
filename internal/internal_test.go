@@ -2,6 +2,7 @@ package internal
 
 import (
 	"bytes"
+	"context"
 	"log"
 	"os"
 	"reflect"
@@ -147,7 +148,7 @@ func TestBatchTimer(t *testing.T) {
 
 		for range testRun.numberOfCalls {
 			DoNothing()
-			bTimer.WaitOnBatch()
+			bTimer.WaitOnBatch(t.Context())
 		}
 
 		elapsedTime := time.Since(startTime)
@@ -339,11 +340,11 @@ type testMockDestination struct {
 	appliedChanges ChangeSet
 }
 
-func (m *testMockDestination) ListUsers(desiredAttrs []string) ([]Person, error) {
+func (m *testMockDestination) ListUsers(ctx context.Context, desiredAttrs []string) ([]Person, error) {
 	return m.people, nil
 }
 
-func (m *testMockDestination) ApplyChangeSet(changes ChangeSet, eventLog chan<- EventLogItem) ChangeResults {
+func (m *testMockDestination) ApplyChangeSet(ctx context.Context, changes ChangeSet, eventLog chan<- EventLogItem) ChangeResults {
 	m.appliedChanges = changes
 	return ChangeResults{
 		Created: uint64(len(changes.Create)),
@@ -369,7 +370,7 @@ type testMockSource struct {
 	people []Person
 }
 
-func (m *testMockSource) ListUsers(desiredAttrs []string) ([]Person, error) {
+func (m *testMockSource) ListUsers(ctx context.Context, desiredAttrs []string) ([]Person, error) {
 	return m.people, nil
 }
 
@@ -469,7 +470,7 @@ func TestRunSyncSet_DisabledActions(t *testing.T) {
 				},
 			}
 
-			err := RunSyncSet(logger, src, dst, cfg)
+			err := RunSyncSet(t.Context(), logger, src, dst, cfg)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

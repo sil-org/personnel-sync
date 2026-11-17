@@ -2,6 +2,7 @@ package restapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,7 +22,7 @@ import (
 
 	"github.com/Jeffail/gabs/v2"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/sil-org/personnel-sync/v8/internal"
 )
 
 const (
@@ -122,7 +123,7 @@ func (r *RestAPI) ForSet(syncSetJson json.RawMessage) error {
 
 // ListUsers makes http requests and uses the responses to populate
 // and return a slice of Person instances
-func (r *RestAPI) ListUsers(desiredAttrs []string) ([]internal.Person, error) {
+func (r *RestAPI) ListUsers(ctx context.Context, desiredAttrs []string) ([]internal.Person, error) {
 	errLog := make(chan string, 1000)
 	people := make(chan internal.Person, 20000)
 	var wg sync.WaitGroup
@@ -134,7 +135,7 @@ func (r *RestAPI) ListUsers(desiredAttrs []string) ([]internal.Person, error) {
 	}
 	for _, p := range r.setConfig.Paths {
 		wg.Add(1)
-		go r.listUsersForPath(attributesToRead, p, &wg, people, errLog)
+		go r.listUsersForPath(ctx, attributesToRead, p, &wg, people, errLog)
 	}
 
 	wg.Wait()
@@ -152,7 +153,7 @@ func (r *RestAPI) ListUsers(desiredAttrs []string) ([]internal.Person, error) {
 	return r.filterPeople(people)
 }
 
-func (r *RestAPI) ApplyChangeSet(changes internal.ChangeSet, eventLog chan<- internal.EventLogItem) internal.ChangeResults {
+func (r *RestAPI) ApplyChangeSet(ctx context.Context, changes internal.ChangeSet, eventLog chan<- internal.EventLogItem) internal.ChangeResults {
 	var results internal.ChangeResults
 	var wg sync.WaitGroup
 
@@ -162,9 +163,12 @@ func (r *RestAPI) ApplyChangeSet(changes internal.ChangeSet, eventLog chan<- int
 		log.Println("Creation is disabled.")
 	} else {
 		for _, toCreate := range changes.Create {
+			if ctx.Err() != nil {
+				break
+			}
 			wg.Add(1)
-			go r.addPerson(toCreate, &results.Created, &wg, eventLog)
-			batchTimer.WaitOnBatch()
+			go r.addPerson(ctx, toCreate, &results.Created, &wg, eventLog)
+			batchTimer.WaitOnBatch(ctx)
 		}
 	}
 
@@ -172,9 +176,12 @@ func (r *RestAPI) ApplyChangeSet(changes internal.ChangeSet, eventLog chan<- int
 		log.Println("Update is disabled.")
 	} else {
 		for _, toUpdate := range changes.Update {
+			if ctx.Err() != nil {
+				break
+			}
 			wg.Add(1)
-			go r.updatePerson(toUpdate, &results.Updated, &wg, eventLog)
-			batchTimer.WaitOnBatch()
+			go r.updatePerson(ctx, toUpdate, &results.Updated, &wg, eventLog)
+			batchTimer.WaitOnBatch(ctx)
 		}
 	}
 
@@ -182,9 +189,12 @@ func (r *RestAPI) ApplyChangeSet(changes internal.ChangeSet, eventLog chan<- int
 		log.Println("Deletion is disabled.")
 	} else {
 		for _, toUpdate := range changes.Delete {
+			if ctx.Err() != nil {
+				break
+			}
 			wg.Add(1)
-			go r.deletePerson(toUpdate, &results.Deleted, &wg, eventLog)
-			batchTimer.WaitOnBatch()
+			go r.deletePerson(ctx, toUpdate, &results.Deleted, &wg, eventLog)
+			batchTimer.WaitOnBatch(ctx)
 		}
 	}
 
@@ -194,6 +204,7 @@ func (r *RestAPI) ApplyChangeSet(changes internal.ChangeSet, eventLog chan<- int
 }
 
 func (r *RestAPI) listUsersForPath(
+	ctx context.Context,
 	desiredAttrs []string,
 	path string,
 	wg *sync.WaitGroup,
@@ -206,7 +217,7 @@ func (r *RestAPI) listUsersForPath(
 
 	if scheme == "" {
 		apiURL := r.BaseURL + path
-		p := r.requestPage(desiredAttrs, apiURL, errLog)
+		p := r.requestPage(ctx, desiredAttrs, apiURL, errLog)
 		for _, pp := range p {
 			people <- pp
 		}
@@ -233,7 +244,7 @@ func (r *RestAPI) listUsersForPath(
 			return
 		}
 
-		p := r.requestPage(desiredAttrs, apiURL, errLog)
+		p := r.requestPage(ctx, desiredAttrs, apiURL, errLog)
 		if len(p) == 0 {
 			break
 		}
@@ -244,14 +255,17 @@ func (r *RestAPI) listUsersForPath(
 		batchCounter++
 		if batchCounter >= r.BatchSize {
 			log.Printf("listUsersForPath waiting %d seconds for rate limit", r.BatchDelaySeconds)
-			time.Sleep(time.Second * time.Duration(r.BatchDelaySeconds))
+			if err := internal.Sleep(ctx, time.Second*time.Duration(r.BatchDelaySeconds)); err != nil {
+				errLog <- fmt.Sprintf("listing users interrupted: %v", err)
+				return
+			}
 			batchCounter = 0
 		}
 	}
 }
 
-func (r *RestAPI) requestPage(desiredAttrs []string, url string, errLog chan<- string) []internal.Person {
-	reqRes := r.httpRequest(r.ListMethod, url, "", nil)
+func (r *RestAPI) requestPage(ctx context.Context, desiredAttrs []string, url string, errLog chan<- string) []internal.Person {
+	reqRes := r.httpRequest(ctx, r.ListMethod, url, "", nil)
 	if reqRes.Err != nil {
 		if reqRes.RespCode > 0 {
 			msg := fmt.Sprintf("response status code: %d url: %s error: %v response body: %s", reqRes.RespCode, url, reqRes.Err, reqRes.RespBody)
@@ -492,13 +506,13 @@ func chooseEventLog(code int, message string, eventLog chan<- internal.EventLogI
 	}
 }
 
-func (r *RestAPI) addPerson(p internal.Person, n *uint64, wg *sync.WaitGroup, eventLog chan<- internal.EventLogItem) {
+func (r *RestAPI) addPerson(ctx context.Context, p internal.Person, n *uint64, wg *sync.WaitGroup, eventLog chan<- internal.EventLogItem) {
 	defer wg.Done()
 
 	apiURL := fmt.Sprintf("%s%s", r.BaseURL, r.setConfig.CreatePath)
 	headers := map[string]string{"Content-Type": "application/json"}
 	reqBody := attributesToJSON(p.Attributes)
-	reqRes := r.httpRequest(r.CreateMethod, apiURL, reqBody, headers)
+	reqRes := r.httpRequest(ctx, r.CreateMethod, apiURL, reqBody, headers)
 	if reqRes.Err != nil {
 		message := fmt.Sprintf("addPerson '%s' httpRequest error '%s', url: %s, request: %s, response: %s",
 			p.CompareValue, reqRes.Err, apiURL, reqBody, reqRes.RespBody)
@@ -524,14 +538,14 @@ func attributesToJSON(attr map[string]string) string {
 	return jsonObj.String()
 }
 
-func (r *RestAPI) updatePerson(p internal.Person, n *uint64, wg *sync.WaitGroup, eventLog chan<- internal.EventLogItem) {
+func (r *RestAPI) updatePerson(ctx context.Context, p internal.Person, n *uint64, wg *sync.WaitGroup, eventLog chan<- internal.EventLogItem) {
 	defer wg.Done()
 
 	updatePath := strings.Replace(r.setConfig.UpdatePath, "{id}", p.ID, 1)
 	apiURL := fmt.Sprintf("%s%s", r.BaseURL, updatePath)
 	headers := map[string]string{"Content-Type": "application/json"}
 	reqBody := attributesToJSON(p.Attributes)
-	reqRes := r.httpRequest(r.UpdateMethod, apiURL, reqBody, headers)
+	reqRes := r.httpRequest(ctx, r.UpdateMethod, apiURL, reqBody, headers)
 	if reqRes.Err != nil {
 		message := fmt.Sprintf("updatePerson '%s' httpRequest error '%s', url: %s, request: %s, response: %s",
 			p.CompareValue, reqRes.Err, apiURL, reqBody, reqRes.RespBody)
@@ -547,13 +561,13 @@ func (r *RestAPI) updatePerson(p internal.Person, n *uint64, wg *sync.WaitGroup,
 	atomic.AddUint64(n, 1)
 }
 
-func (r *RestAPI) deletePerson(p internal.Person, n *uint64, wg *sync.WaitGroup, eventLog chan<- internal.EventLogItem) {
+func (r *RestAPI) deletePerson(ctx context.Context, p internal.Person, n *uint64, wg *sync.WaitGroup, eventLog chan<- internal.EventLogItem) {
 	defer wg.Done()
 
 	deletePath := strings.Replace(r.setConfig.DeletePath, "{id}", p.ID, 1)
 	apiURL := fmt.Sprintf("%s%s", r.BaseURL, deletePath)
 	headers := map[string]string{"Content-Type": "application/json"}
-	reqRes := r.httpRequest(r.DeleteMethod, apiURL, "", headers)
+	reqRes := r.httpRequest(ctx, r.DeleteMethod, apiURL, "", headers)
 	if reqRes.Err != nil {
 		message := fmt.Sprintf("deletePerson '%s' httpRequest error '%s', url: %s,  response: %s",
 			p.CompareValue, reqRes.Err, apiURL, reqRes.RespBody)
@@ -575,18 +589,18 @@ type requestResults struct {
 	Err      error
 }
 
-func (r *RestAPI) httpRequest(verb, url, body string, headers map[string]string) requestResults {
+func (r *RestAPI) httpRequest(ctx context.Context, verb, url, body string, headers map[string]string) requestResults {
 	timeout := r.getTimeout()
 	client := &http.Client{Timeout: time.Second * time.Duration(timeout)}
 
 	waitFn := r.retryWait
 	if waitFn == nil {
-		waitFn = time.Sleep
+		waitFn = internal.Sleep
 	}
 
 	var lastResult requestResults
 	for attempt := range MaxRetries + 1 {
-		req, err := r.newRequest(verb, url, body, headers)
+		req, err := r.newRequest(ctx, verb, url, body, headers)
 		if err != nil {
 			return requestResults{Err: err}
 		}
@@ -611,7 +625,9 @@ func (r *RestAPI) httpRequest(verb, url, body string, headers map[string]string)
 		if code == http.StatusTooManyRequests && attempt < MaxRetries {
 			delay := retryDelay(resp.Header.Get("Retry-After"), attempt)
 			log.Printf("rate limited (HTTP 429) on %s %s, retrying in %v (attempt %d/%d)", verb, url, delay, attempt+1, MaxRetries)
-			waitFn(delay)
+			if err := waitFn(ctx, delay); err != nil {
+				return requestResults{RespBody: bodyString, RespCode: code, Err: err}
+			}
 			lastResult = requestResults{RespBody: bodyString, RespCode: code, Err: errors.New(resp.Status)}
 			continue
 		}
@@ -626,13 +642,13 @@ func (r *RestAPI) httpRequest(verb, url, body string, headers map[string]string)
 	return lastResult
 }
 
-func (r *RestAPI) newRequest(verb, url, body string, headers map[string]string) (*http.Request, error) {
+func (r *RestAPI) newRequest(ctx context.Context, verb, url, body string, headers map[string]string) (*http.Request, error) {
 	var req *http.Request
 	var err error
 	if body == "" {
-		req, err = http.NewRequest(verb, url, nil)
+		req, err = http.NewRequestWithContext(ctx, verb, url, nil)
 	} else {
-		req, err = http.NewRequest(verb, url, strings.NewReader(body))
+		req, err = http.NewRequestWithContext(ctx, verb, url, strings.NewReader(body))
 	}
 	if err != nil {
 		return nil, err

@@ -1,6 +1,7 @@
 package restapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,7 +16,7 @@ import (
 	"github.com/Jeffail/gabs/v2"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/sil-org/personnel-sync/v8/internal"
 )
 
 func TestRestAPI_ForSet(t *testing.T) {
@@ -358,7 +359,7 @@ func TestRestAPI_ListUsers(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ForSet error: %s", err)
 			}
-			got, err := r.ListUsers(tt.desiredAttrs)
+			got, err := r.ListUsers(t.Context(), tt.desiredAttrs)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("RestAPI.ListUsers() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -496,7 +497,7 @@ func TestRestAPI_listUsersForPath(t *testing.T) {
 			var wg sync.WaitGroup
 
 			wg.Add(1)
-			go tt.r.listUsersForPath(tt.args.desiredAttrs, tt.args.path, &wg, people, errLog)
+			go tt.r.listUsersForPath(t.Context(), tt.args.desiredAttrs, tt.args.path, &wg, people, errLog)
 
 			wg.Wait()
 			close(people)
@@ -697,7 +698,7 @@ func TestRestAPI_newRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := tt.restAPI.newRequest(tt.verb, tt.url, tt.body, tt.headers)
+			req, err := tt.restAPI.newRequest(t.Context(), tt.verb, tt.url, tt.body, tt.headers)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -809,7 +810,7 @@ func TestRestAPI_httpRequest(t *testing.T) {
 		{
 			name: "rate limit retry succeeds",
 			restAPI: RestAPI{
-				retryWait: func(d time.Duration) {},
+				retryWait: func(context.Context, time.Duration) error { return nil },
 			},
 			verb: http.MethodGet,
 			url:  server.URL + "/ratelimit/retry-succeeds",
@@ -818,7 +819,7 @@ func TestRestAPI_httpRequest(t *testing.T) {
 		{
 			name: "rate limit retry exhausts max retries",
 			restAPI: RestAPI{
-				retryWait: func(d time.Duration) {},
+				retryWait: func(context.Context, time.Duration) error { return nil },
 			},
 			verb:    http.MethodGet,
 			url:     server.URL + "/ratelimit/retry-fails",
@@ -827,7 +828,7 @@ func TestRestAPI_httpRequest(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reqRes := tt.restAPI.httpRequest(tt.verb, tt.url, tt.body, tt.headers)
+			reqRes := tt.restAPI.httpRequest(t.Context(), tt.verb, tt.url, tt.body, tt.headers)
 			if (reqRes.Err != nil) != tt.wantErr {
 				t.Errorf("httpRequest() error = %v, wantErr %v", reqRes.Err, tt.wantErr)
 				return
@@ -857,12 +858,13 @@ func TestRestAPI_httpRequest(t *testing.T) {
 
 		var delays []time.Duration
 		r := RestAPI{
-			retryWait: func(d time.Duration) {
+			retryWait: func(_ context.Context, d time.Duration) error {
 				delays = append(delays, d)
+				return nil
 			},
 		}
 
-		res := r.httpRequest(http.MethodPost, srv.URL+"/users", `{"email":"test@example.com"}`, nil)
+		res := r.httpRequest(t.Context(), http.MethodPost, srv.URL+"/users", `{"email":"test@example.com"}`, nil)
 		require.NoError(t, res.Err)
 		require.Equal(t, http.StatusOK, res.RespCode)
 		require.Equal(t, `{"status":"ok"}`, res.RespBody)
@@ -881,12 +883,13 @@ func TestRestAPI_httpRequest(t *testing.T) {
 
 		var delays []time.Duration
 		r := RestAPI{
-			retryWait: func(d time.Duration) {
+			retryWait: func(_ context.Context, d time.Duration) error {
 				delays = append(delays, d)
+				return nil
 			},
 		}
 
-		res := r.httpRequest(http.MethodGet, srv.URL+"/users", "", nil)
+		res := r.httpRequest(t.Context(), http.MethodGet, srv.URL+"/users", "", nil)
 		require.Error(t, res.Err)
 		require.Equal(t, http.StatusTooManyRequests, res.RespCode)
 		require.Equal(t, `{"error":"too many requests"}`, res.RespBody)
@@ -1092,7 +1095,7 @@ func TestRestAPI_listUsersForPathWithPagination(t *testing.T) {
 			var wg sync.WaitGroup
 
 			wg.Add(1)
-			go tt.r.listUsersForPath([]string{"Name"}, tt.path, &wg, people, errLog)
+			go tt.r.listUsersForPath(t.Context(), []string{"Name"}, tt.path, &wg, people, errLog)
 
 			wg.Wait()
 			close(people)
@@ -1118,3 +1121,21 @@ func TestRestAPI_listUsersForPathWithPagination(t *testing.T) {
 }
 
 
+
+func TestRestAPI_httpRequestContextCanceledDuringRetryWait(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Retry-After", "3600")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	r := RestAPI{} // default retryWait, which honors ctx
+	start := time.Now()
+	res := r.httpRequest(ctx, http.MethodGet, srv.URL+"/users", "", nil)
+	require.ErrorIs(t, res.Err, context.DeadlineExceeded)
+	require.Equal(t, http.StatusTooManyRequests, res.RespCode)
+	require.Less(t, time.Since(start), 5*time.Second)
+}

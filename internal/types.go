@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"encoding/json"
 	"log/syslog"
 )
@@ -84,18 +85,21 @@ var LogLevels = map[syslog.Priority]string{
 	syslog.LOG_DEBUG:   "Debug",
 }
 
+// Destination is implemented by each sync destination. The ctx passed to ListUsers and ApplyChangeSet bounds all
+// outbound requests; when it is done, implementations should stop starting new work and return promptly.
 type Destination interface {
 	ForSet(syncSetJson json.RawMessage) error
-	ListUsers(desiredAttrs []string) ([]Person, error)
-	ApplyChangeSet(changes ChangeSet, activityLog chan<- EventLogItem) ChangeResults
+	ListUsers(ctx context.Context, desiredAttrs []string) ([]Person, error)
+	ApplyChangeSet(ctx context.Context, changes ChangeSet, activityLog chan<- EventLogItem) ChangeResults
 	AddDisabled() bool
 	UpdateDisabled() bool
 	DeleteDisabled() bool
 }
 
+// Source is implemented by each sync source. The ctx passed to ListUsers bounds all outbound requests.
 type Source interface {
 	ForSet(syncSetJson json.RawMessage) error
-	ListUsers(desiredAttrs []string) ([]Person, error)
+	ListUsers(ctx context.Context, desiredAttrs []string) ([]Person, error)
 }
 
 type SyncError struct {

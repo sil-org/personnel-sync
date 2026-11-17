@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/googleapi"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/sil-org/personnel-sync/v8/internal"
 
 	admin "google.golang.org/api/admin/directory/v1"
 )
@@ -73,7 +73,7 @@ func TestGoogleUsers_ListUsers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g, err := NewGoogleUsersDestination(tt.fields.DestinationConfig)
 			require.NoErrorf(t, err, "Failed to get new googleUsers instance, error: %s", err.Error())
-			got, err := g.ListUsers([]string{})
+			got, err := g.ListUsers(t.Context(), []string{})
 			require.Equalf(t, tt.wantErr, err != nil, "GoogleUsers.ListUsers() error = %v, wantErr %v", err, tt.wantErr)
 			require.Equalf(t, got, tt.want, "GoogleUsers.ListUsers() = %v, want %v", got, tt.want)
 		})
@@ -140,7 +140,7 @@ func TestGoogleUsers_ApplyChangeSet(t *testing.T) {
 			g, err := NewGoogleUsersDestination(tt.fields.DestinationConfig)
 			require.NoErrorf(t, err, "Failed to get new googleUsers instance, error: %s", err.Error())
 			eventLog := make(chan internal.EventLogItem, 50)
-			got := g.ApplyChangeSet(tt.args.changes, eventLog)
+			got := g.ApplyChangeSet(t.Context(), tt.args.changes, eventLog)
 			require.Equalf(t, tt.want, got, "GoogleUsers.ApplyChangeSet() = %v, want %v", got, tt.want)
 			close(eventLog)
 		})

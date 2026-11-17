@@ -1,9 +1,10 @@
 package restapi
 
 import (
+	"context"
 	"time"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/sil-org/personnel-sync/v8/internal"
 )
 
 const (
@@ -35,7 +36,7 @@ type RestAPI struct {
 	Pagination           Pagination
 	Filters              internal.Filters
 	HttpTimeoutSeconds   int
-	retryWait            func(time.Duration)
+	retryWait            func(context.Context, time.Duration) error // for tests; defaults to internal.Sleep
 }
 
 type SetConfig struct {
