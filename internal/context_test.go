@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"testing"
 	"time"
 
@@ -102,4 +103,48 @@ func TestSyncError_Unwrap(t *testing.T) {
 	syncErr, ok := errors.AsType[SyncError](err)
 	require.True(t, ok)
 	require.True(t, syncErr.SendAlert)
+}
+
+func TestUntilDone(t *testing.T) {
+	items := []string{"a", "b", "c", "d"}
+
+	t.Run("yields everything when ctx is not done", func(t *testing.T) {
+		var got []string
+		for _, v := range UntilDone(t.Context(), slices.All(items)) {
+			got = append(got, v)
+		}
+		require.Equal(t, items, got)
+	})
+
+	t.Run("yields nothing when ctx is already done", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		for range UntilDone(ctx, slices.All(items)) {
+			t.Fatal("should not yield")
+		}
+	})
+
+	t.Run("stops after ctx is canceled mid-loop", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		var got []string
+		for _, v := range UntilDone(ctx, slices.All(items)) {
+			got = append(got, v)
+			if v == "b" {
+				cancel()
+			}
+		}
+		require.Equal(t, []string{"a", "b"}, got)
+	})
+
+	t.Run("caller break stops iteration", func(t *testing.T) {
+		var got []string
+		for _, v := range UntilDone(t.Context(), slices.All(items)) {
+			got = append(got, v)
+			if v == "c" {
+				break
+			}
+		}
+		require.Equal(t, []string{"a", "b", "c"}, got)
+	})
 }

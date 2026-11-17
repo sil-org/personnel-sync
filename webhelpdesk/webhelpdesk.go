@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/syslog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -132,19 +133,13 @@ func (w *WebHelpDesk) ApplyChangeSet(
 	// One minute per batch
 	batchTimer := internal.NewBatchTimer(w.BatchSize, w.BatchDelaySeconds)
 
-	for _, cp := range changes.Create {
-		if ctx.Err() != nil {
-			break
-		}
+	for _, cp := range internal.UntilDone(ctx, slices.All(changes.Create)) {
 		wg.Add(1)
 		go w.CreateUser(ctx, cp, &results.Created, &wg, eventLog)
 		batchTimer.WaitOnBatch(ctx)
 	}
 
-	for _, dp := range changes.Update {
-		if ctx.Err() != nil {
-			break
-		}
+	for _, dp := range internal.UntilDone(ctx, slices.All(changes.Update)) {
 		wg.Add(1)
 		go w.UpdateUser(ctx, dp, &results.Updated, &wg, eventLog)
 		batchTimer.WaitOnBatch(ctx)

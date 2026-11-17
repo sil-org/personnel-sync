@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/syslog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -232,10 +233,7 @@ func (g *GoogleUsers) ApplyChangeSet(
 	batchTimer := internal.NewBatchTimer(g.BatchSize, g.BatchDelaySeconds)
 
 	if !g.DestinationConfig.DisableUpdate {
-		for _, toUpdate := range changes.Update {
-			if ctx.Err() != nil {
-				break
-			}
+		for _, toUpdate := range internal.UntilDone(ctx, slices.All(changes.Update)) {
 			wg.Add(1)
 			go g.updateUser(ctx, toUpdate, &results.Updated, &wg, eventLog)
 			batchTimer.WaitOnBatch(ctx)

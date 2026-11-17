@@ -83,9 +83,9 @@ func initSheetsService(ctx context.Context, auth GoogleAuth, adminEmail string, 
 
 	config.Subject = adminEmail
 
-	// The token client deliberately ignores ctx. Once ApplyChangeSet starts writing, it continues even if ctx is
-	// canceled, and those writes may need to refresh the token.
-	svc, err := sheets.NewService(ctx, option.WithHTTPClient(config.Client(context.Background())))
+	// The token client deliberately ignores ctx cancellation. Once ApplyChangeSet starts writing, it continues even if
+	// ctx is canceled, and those writes may need to refresh the token.
+	svc, err := sheets.NewService(ctx, option.WithHTTPClient(config.Client(context.WithoutCancel(ctx))))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create sheets service, error: %s", err)
 	}

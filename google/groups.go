@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/syslog"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -155,10 +156,7 @@ func (g *GoogleGroups) ApplyChangeSet(
 	batchTimer := internal.NewBatchTimer(g.BatchSize, g.BatchDelaySeconds)
 
 	if !g.GroupSyncSet.DisableAdd {
-		for email, role := range toBeCreated {
-			if ctx.Err() != nil {
-				break
-			}
+		for email, role := range internal.UntilDone(ctx, maps.All(toBeCreated)) {
 			wg.Add(1)
 			go g.addMember(ctx, email, role, &results.Created, &wg, eventLog)
 			batchTimer.WaitOnBatch(ctx)
@@ -166,13 +164,10 @@ func (g *GoogleGroups) ApplyChangeSet(
 	}
 
 	if !g.GroupSyncSet.DisableDelete {
-		for _, dp := range changes.Delete {
+		for _, dp := range internal.UntilDone(ctx, slices.All(changes.Delete)) {
 			// Do not delete ExtraMembers
 			if g.isExtraMember(dp.CompareValue) {
 				continue
-			}
-			if ctx.Err() != nil {
-				break
 			}
 			wg.Add(1)
 			go g.removeMember(ctx, dp.CompareValue, &results.Deleted, &wg, eventLog)

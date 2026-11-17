@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"log"
 	"log/syslog"
 	"regexp"
@@ -413,5 +414,19 @@ func Sleep(ctx context.Context, d time.Duration) error {
 		return context.Cause(ctx)
 	case <-timer.C:
 		return nil
+	}
+}
+
+// UntilDone yields the pairs from seq until ctx is done, then stops. Use it to stop starting new work after
+// cancellation, without a ctx check in the loop body:
+//
+//	for _, person := range UntilDone(ctx, slices.All(people)) { ... }
+func UntilDone[K, V any](ctx context.Context, seq iter.Seq2[K, V]) iter.Seq2[K, V] {
+	return func(yield func(K, V) bool) {
+		for k, v := range seq {
+			if ctx.Err() != nil || !yield(k, v) {
+				return
+			}
+		}
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"log/syslog"
 	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -253,10 +254,7 @@ func (g *GoogleContacts) ApplyChangeSet(
 	if g.DestinationConfig.DisableAdd {
 		log.Println("Contact creation is disabled.")
 	} else {
-		for _, toCreate := range changes.Create {
-			if ctx.Err() != nil {
-				break
-			}
+		for _, toCreate := range internal.UntilDone(ctx, slices.All(changes.Create)) {
 			wg.Add(1)
 			go g.addContact(ctx, toCreate, &results.Created, &wg, eventLog)
 			batchTimer.WaitOnBatch(ctx)
@@ -266,10 +264,7 @@ func (g *GoogleContacts) ApplyChangeSet(
 	if g.DestinationConfig.DisableUpdate {
 		log.Println("Contact update is disabled.")
 	} else {
-		for _, toUpdate := range changes.Update {
-			if ctx.Err() != nil {
-				break
-			}
+		for _, toUpdate := range internal.UntilDone(ctx, slices.All(changes.Update)) {
 			wg.Add(1)
 			go g.updateContact(ctx, toUpdate, &results.Updated, &wg, eventLog)
 			batchTimer.WaitOnBatch(ctx)
@@ -279,10 +274,7 @@ func (g *GoogleContacts) ApplyChangeSet(
 	if g.DestinationConfig.DisableDelete {
 		log.Println("Contact deletion is disabled.")
 	} else {
-		for _, toUpdate := range changes.Delete {
-			if ctx.Err() != nil {
-				break
-			}
+		for _, toUpdate := range internal.UntilDone(ctx, slices.All(changes.Delete)) {
 			wg.Add(1)
 			go g.deleteContact(ctx, toUpdate, &results.Deleted, &wg, eventLog)
 			batchTimer.WaitOnBatch(ctx)

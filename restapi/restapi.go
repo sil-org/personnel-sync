@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -162,10 +163,7 @@ func (r *RestAPI) ApplyChangeSet(ctx context.Context, changes internal.ChangeSet
 	if r.destinationConfig.DisableAdd {
 		log.Println("Creation is disabled.")
 	} else {
-		for _, toCreate := range changes.Create {
-			if ctx.Err() != nil {
-				break
-			}
+		for _, toCreate := range internal.UntilDone(ctx, slices.All(changes.Create)) {
 			wg.Add(1)
 			go r.addPerson(ctx, toCreate, &results.Created, &wg, eventLog)
 			batchTimer.WaitOnBatch(ctx)
@@ -175,10 +173,7 @@ func (r *RestAPI) ApplyChangeSet(ctx context.Context, changes internal.ChangeSet
 	if r.destinationConfig.DisableUpdate {
 		log.Println("Update is disabled.")
 	} else {
-		for _, toUpdate := range changes.Update {
-			if ctx.Err() != nil {
-				break
-			}
+		for _, toUpdate := range internal.UntilDone(ctx, slices.All(changes.Update)) {
 			wg.Add(1)
 			go r.updatePerson(ctx, toUpdate, &results.Updated, &wg, eventLog)
 			batchTimer.WaitOnBatch(ctx)
@@ -188,10 +183,7 @@ func (r *RestAPI) ApplyChangeSet(ctx context.Context, changes internal.ChangeSet
 	if r.destinationConfig.DisableDelete {
 		log.Println("Deletion is disabled.")
 	} else {
-		for _, toUpdate := range changes.Delete {
-			if ctx.Err() != nil {
-				break
-			}
+		for _, toUpdate := range internal.UntilDone(ctx, slices.All(changes.Delete)) {
 			wg.Add(1)
 			go r.deletePerson(ctx, toUpdate, &results.Deleted, &wg, eventLog)
 			batchTimer.WaitOnBatch(ctx)
