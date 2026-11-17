@@ -153,6 +153,10 @@ been omitted for simplicity.
 
 ### REST API
 
+**Size limit:** a sync set should list no more than 10,000 records from a REST API, counted across all of
+its `Paths` before any `Filters` are applied. Larger listings can make the sync hang until the Lambda (or process)
+times out, without sending an alert.
+
 Data sources coming from simple API calls can use the `RestAPI` source. Here are some examples of how to configure it:
 
 #### Basic Authentication
@@ -325,7 +329,8 @@ Example config:
 
 Destinations conforming to a simple REST API can use the `RestAPI` destination.
 Authentication is the same as for a REST API source, except that Salesforce
-OAuth is not supported.
+OAuth is not supported. The size limit described for the REST API source also
+applies to a REST API destination.
 
 Here are some examples of how to configure it:
 
@@ -587,7 +592,10 @@ There must be at least two rows in the sheet to begin with. The first row must
 be pre-filled with field names. The second row must be present, but will be
 ignored and may be overwritten.
 
-The entire sheet will be overwritten with new data on every sync
+The entire sheet will be overwritten with new data on every sync. This is done with two
+separate requests, one to clear the sheet and one to write the new data. If the second
+request fails, or the Lambda times out between them, the sheet stays empty until the next
+successful sync.
 
 If not specified in the configuration, the sheet updated is "Sheet1"
 
@@ -910,6 +918,11 @@ Data destination configuration. Refer to the adapter documentation above for det
 - `Disable`
 
 If set to `true`, this SyncSet will be skipped.
+
+**Timing:** comparing a SyncSet's source and destination takes time roughly proportional to the product
+of their sizes. Allow about 15 seconds for 10,000 people on each side, and about a minute for 20,000,
+per SyncSet. Lambdas with less memory get less CPU and take longer. Allow for this when setting the
+Lambda timeout.
 
 # Other notes
 
