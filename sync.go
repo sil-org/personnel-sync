@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/sil-org/personnel-sync/v8/alert"
@@ -99,6 +100,7 @@ func RunSync(ctx context.Context, configFile string) error {
 
 	maxNameLength := config.MaxSyncSetNameLength()
 	var alertError error
+	var skippedSets []string
 
 	// Iterate through SyncSets and process changes
 	for i, syncSet := range config.SyncSets {
@@ -106,12 +108,10 @@ func RunSync(ctx context.Context, configFile string) error {
 			continue
 		}
 
+		// Once ctx is done, don't start any more sync sets, but note each one for the alert
 		if ctx.Err() != nil {
-			err := fmt.Errorf(`Sync stopped before syncSet "%s" (%d of %d): %w`,
-				syncSet.Name, i+1, len(config.SyncSets), context.Cause(ctx))
-			log.Println(err)
-			alertError = errors.Join(alertError, err)
-			break
+			skippedSets = append(skippedSets, fmt.Sprintf("%q", syncSet.Name))
+			continue
 		}
 
 		if syncSet.Name == "" {
@@ -137,6 +137,13 @@ func RunSync(ctx context.Context, configFile string) error {
 			err = fmt.Errorf(`Sync failed with error on syncSet "%s": %w`, syncSet.Name, err)
 			alertError = handleSyncError(syncSetLogger, err, alertError)
 		}
+	}
+
+	if len(skippedSets) > 0 {
+		err := fmt.Errorf("Sync stopped early, %d sync set(s) not run (%s): %w",
+			len(skippedSets), strings.Join(skippedSets, ", "), context.Cause(ctx))
+		log.Println(err)
+		alertError = errors.Join(alertError, err)
 	}
 
 	if alertError != nil {

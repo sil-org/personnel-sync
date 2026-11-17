@@ -83,7 +83,9 @@ func initSheetsService(ctx context.Context, auth GoogleAuth, adminEmail string, 
 
 	config.Subject = adminEmail
 
-	svc, err := sheets.NewService(ctx, option.WithHTTPClient(config.Client(ctx)))
+	// The token client deliberately ignores ctx. Once ApplyChangeSet starts writing, it continues even if ctx is
+	// canceled, and those writes may need to refresh the token.
+	svc, err := sheets.NewService(ctx, option.WithHTTPClient(config.Client(context.Background())))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create sheets service, error: %s", err)
 	}
@@ -167,6 +169,13 @@ func (g *GoogleSheets) ApplyChangeSet(
 		return internal.ChangeResults{}
 	}
 
+	// Replacing the sheet's contents takes separate clear and write requests, and stopping between them (or during the
+	// clear) would leave the sheet empty. So don't start if ctx is already done, but once started, finish regardless.
+	if ctx.Err() != nil {
+		return internal.ChangeResults{}
+	}
+	ctx = context.WithoutCancel(ctx)
+
 	sheetData, err := g.readSheet(ctx)
 	if err != nil {
 		eventLog <- internal.EventLogItem{
@@ -184,8 +193,7 @@ func (g *GoogleSheets) ApplyChangeSet(
 		return internal.ChangeResults{}
 	}
 
-	// The sheet is now cleared, so finish writing it even if ctx is canceled, rather than leave it empty
-	if err := g.updateSheet(context.WithoutCancel(ctx), getHeaderFromSheetData(sheetData), changes.Create); err != nil {
+	if err := g.updateSheet(ctx, getHeaderFromSheetData(sheetData), changes.Create); err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ALERT,
 			Message: fmt.Sprintf("unable to update sheet, error: %v", err),

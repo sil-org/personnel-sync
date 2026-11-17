@@ -224,6 +224,11 @@ func RunSyncSet(ctx context.Context, logger *log.Logger, source Source, destinat
 	logger.Printf("ChangeSet Plans: Create %d, Update %d, Delete %d\n",
 		len(changeSet.Create), len(changeSet.Update), len(changeSet.Delete))
 
+	// Generating the change set can take a while for large lists, so check ctx before reporting or applying it
+	if ctx.Err() != nil {
+		return fmt.Errorf("sync interrupted before applying changes: %w", context.Cause(ctx))
+	}
+
 	// If in DryRun mode only print out ChangeSet plans and return mocked change results based on plans
 	if config.Runtime.DryRunMode {
 		logger.Println("Dry run mode enabled. Change set details follow:")

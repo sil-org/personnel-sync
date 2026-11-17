@@ -338,6 +338,8 @@ type testMockDestination struct {
 	disableUpdate  bool
 	disableDelete  bool
 	appliedChanges ChangeSet
+	applyCalled    bool
+	onApply        func() // called at the start of ApplyChangeSet, if set
 }
 
 func (m *testMockDestination) ListUsers(ctx context.Context, desiredAttrs []string) ([]Person, error) {
@@ -345,6 +347,10 @@ func (m *testMockDestination) ListUsers(ctx context.Context, desiredAttrs []stri
 }
 
 func (m *testMockDestination) ApplyChangeSet(ctx context.Context, changes ChangeSet, eventLog chan<- EventLogItem) ChangeResults {
+	m.applyCalled = true
+	if m.onApply != nil {
+		m.onApply()
+	}
 	m.appliedChanges = changes
 	return ChangeResults{
 		Created: uint64(len(changes.Create)),

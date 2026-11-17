@@ -57,16 +57,40 @@ func TestBatchTimer_WaitOnBatchCanceled(t *testing.T) {
 
 func TestRunSyncSet_Interrupted(t *testing.T) {
 	cause := errors.New("test cause")
-	ctx, cancel := context.WithCancelCause(t.Context())
-	cancel(cause)
-
 	src := &testMockSource{people: []Person{{CompareValue: "a@example.com", Attributes: map[string]string{"email": "a@example.com"}}}}
-	dst := &testMockDestination{}
-	cfg := Config{AttributeMap: []AttributeMap{{Source: "email", Destination: "email"}}}
 
-	err := RunSyncSet(ctx, log.New(&bytes.Buffer{}, "", 0), src, dst, cfg)
-	require.ErrorIs(t, err, cause)
-	require.ErrorContains(t, err, "changes may be incomplete")
+	tests := []struct {
+		name            string
+		dryRun          bool
+		cancelOnApply   bool
+		wantApplyCalled bool
+		wantErr         string
+	}{
+		{name: "canceled before applying", wantApplyCalled: false, wantErr: "before applying changes"},
+		{name: "canceled before dry run output", dryRun: true, wantApplyCalled: false, wantErr: "before applying changes"},
+		{name: "canceled while applying", cancelOnApply: true, wantApplyCalled: true, wantErr: "changes may be incomplete"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancelCause(t.Context())
+			defer cancel(nil)
+			dst := &testMockDestination{}
+			if tt.cancelOnApply {
+				dst.onApply = func() { cancel(cause) }
+			} else {
+				cancel(cause)
+			}
+			cfg := Config{
+				Runtime:      RuntimeConfig{DryRunMode: tt.dryRun},
+				AttributeMap: []AttributeMap{{Source: "email", Destination: "email"}},
+			}
+
+			err := RunSyncSet(ctx, log.New(&bytes.Buffer{}, "", 0), src, dst, cfg)
+			require.ErrorIs(t, err, cause)
+			require.ErrorContains(t, err, tt.wantErr)
+			require.Equal(t, tt.wantApplyCalled, dst.applyCalled)
+		})
+	}
 }
 
 func TestSyncError_Unwrap(t *testing.T) {
