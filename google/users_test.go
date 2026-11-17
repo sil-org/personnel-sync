@@ -71,7 +71,7 @@ func TestGoogleUsers_ListUsers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g, err := NewGoogleUsersDestination(tt.fields.DestinationConfig)
+			g, err := NewGoogleUsersDestination(t.Context(), tt.fields.DestinationConfig)
 			require.NoErrorf(t, err, "Failed to get new googleUsers instance, error: %s", err.Error())
 			got, err := g.ListUsers(t.Context(), []string{})
 			require.Equalf(t, tt.wantErr, err != nil, "GoogleUsers.ListUsers() error = %v, wantErr %v", err, tt.wantErr)
@@ -137,7 +137,7 @@ func TestGoogleUsers_ApplyChangeSet(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g, err := NewGoogleUsersDestination(tt.fields.DestinationConfig)
+			g, err := NewGoogleUsersDestination(t.Context(), tt.fields.DestinationConfig)
 			require.NoErrorf(t, err, "Failed to get new googleUsers instance, error: %s", err.Error())
 			eventLog := make(chan internal.EventLogItem, 50)
 			got := g.ApplyChangeSet(t.Context(), tt.args.changes, eventLog)

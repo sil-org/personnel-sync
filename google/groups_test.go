@@ -62,7 +62,7 @@ func TestGoogleGroups_ApplyChangeSet(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g, err := NewGoogleGroupsDestination(tt.fields.DestinationConfig)
+			g, err := NewGoogleGroupsDestination(t.Context(), tt.fields.DestinationConfig)
 			if err != nil {
 				t.Fatalf("Failed to get new googleGroups instance, error: %s", err.Error())
 			}

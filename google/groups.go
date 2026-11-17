@@ -39,7 +39,7 @@ type GroupSyncSet struct {
 	DisableDelete bool
 }
 
-func NewGoogleGroupsDestination(destinationConfig internal.DestinationConfig) (internal.Destination, error) {
+func NewGoogleGroupsDestination(ctx context.Context, destinationConfig internal.DestinationConfig) (internal.Destination, error) {
 	var googleGroups GoogleGroups
 	// Unmarshal ExtraJSON into GoogleGroupsConfig struct
 	err := json.Unmarshal(destinationConfig.ExtraJSON, &googleGroups.GoogleConfig)
@@ -57,6 +57,7 @@ func NewGoogleGroupsDestination(destinationConfig internal.DestinationConfig) (i
 
 	// Initialize AdminService object
 	googleGroups.AdminService, err = initGoogleAdminService(
+		ctx,
 		googleGroups.GoogleConfig.GoogleAuth,
 		googleGroups.GoogleConfig.DelegatedAdminEmail,
 		admin.AdminDirectoryGroupScope,

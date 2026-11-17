@@ -36,7 +36,7 @@ const (
 )
 
 // NewRestAPISource unmarshals the sourceConfig's ExtraJson into a RestApi struct
-func NewRestAPISource(sourceConfig internal.SourceConfig) (internal.Source, error) {
+func NewRestAPISource(ctx context.Context, sourceConfig internal.SourceConfig) (internal.Source, error) {
 	restAPI := New()
 
 	// Unmarshal ExtraJSON into RestAPI struct
@@ -45,7 +45,7 @@ func NewRestAPISource(sourceConfig internal.SourceConfig) (internal.Source, erro
 	}
 
 	if restAPI.AuthType == AuthTypeSalesforceOauth {
-		if token, err := restAPI.getSalesforceOauthToken(); err != nil {
+		if token, err := restAPI.getSalesforceOauthToken(ctx); err != nil {
 			log.Println(err)
 			return &RestAPI{}, err
 		} else {
@@ -60,7 +60,7 @@ func NewRestAPISource(sourceConfig internal.SourceConfig) (internal.Source, erro
 }
 
 // NewRestAPIDestination unmarshals the destinationConfig's ExtraJson into a RestApi struct
-func NewRestAPIDestination(destinationConfig internal.DestinationConfig) (internal.Destination, error) {
+func NewRestAPIDestination(ctx context.Context, destinationConfig internal.DestinationConfig) (internal.Destination, error) {
 	restAPI := New()
 
 	// Unmarshal ExtraJSON into GoogleGroupsConfig struct
@@ -365,7 +365,7 @@ type SalesforceErrorResponse struct {
 	ErrorDescription string `json:"error_description"`
 }
 
-func (r *RestAPI) getSalesforceOauthToken() (string, error) {
+func (r *RestAPI) getSalesforceOauthToken(ctx context.Context) (string, error) {
 	// Body params
 	data := url.Values{}
 	data.Set("grant_type", "password")
@@ -375,7 +375,7 @@ func (r *RestAPI) getSalesforceOauthToken() (string, error) {
 	data.Set("client_secret", r.ClientSecret)
 
 	client := &http.Client{}
-	req, err := http.NewRequest(http.MethodPost, r.BaseURL, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.BaseURL, strings.NewReader(data.Encode()))
 	if err != nil {
 		log.Println(err)
 		return "", err

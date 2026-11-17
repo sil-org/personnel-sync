@@ -57,9 +57,9 @@ func RunSync(ctx context.Context, configFile string) error {
 	var source internal.Source
 	switch config.Source.Type {
 	case internal.SourceTypeRestAPI:
-		source, err = restapi.NewRestAPISource(config.Source)
+		source, err = restapi.NewRestAPISource(ctx, config.Source)
 	case internal.SourceTypeGoogleSheets:
-		source, err = google.NewGoogleSheetsSource(config.Source)
+		source, err = google.NewGoogleSheetsSource(ctx, config.Source)
 	default:
 		err = errors.New("unrecognized source type")
 	}
@@ -75,17 +75,17 @@ func RunSync(ctx context.Context, configFile string) error {
 	var destination internal.Destination
 	switch config.Destination.Type {
 	case internal.DestinationTypeGoogleContacts:
-		destination, err = google.NewGoogleContactsDestination(config.Destination)
+		destination, err = google.NewGoogleContactsDestination(ctx, config.Destination)
 	case internal.DestinationTypeGoogleGroups:
-		destination, err = google.NewGoogleGroupsDestination(config.Destination)
+		destination, err = google.NewGoogleGroupsDestination(ctx, config.Destination)
 	case internal.DestinationTypeGoogleSheets:
-		destination, err = google.NewGoogleSheetsDestination(config.Destination)
+		destination, err = google.NewGoogleSheetsDestination(ctx, config.Destination)
 	case internal.DestinationTypeGoogleUsers:
-		destination, err = google.NewGoogleUsersDestination(config.Destination)
+		destination, err = google.NewGoogleUsersDestination(ctx, config.Destination)
 	case internal.DestinationTypeRestAPI:
-		destination, err = restapi.NewRestAPIDestination(config.Destination)
+		destination, err = restapi.NewRestAPIDestination(ctx, config.Destination)
 	case internal.DestinationTypeWebHelpDesk:
-		destination, err = webhelpdesk.NewWebHelpDeskDestination(config.Destination)
+		destination, err = webhelpdesk.NewWebHelpDeskDestination(ctx, config.Destination)
 	default:
 		err = errors.New("unrecognized destination type")
 	}

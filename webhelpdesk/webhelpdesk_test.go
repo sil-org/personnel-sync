@@ -230,7 +230,7 @@ func TestWebHelpDesk_ListUsers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w, err := NewWebHelpDeskDestination(tt.fields.DestinationConfig)
+			w, err := NewWebHelpDeskDestination(t.Context(), tt.fields.DestinationConfig)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -260,7 +260,7 @@ func TestCreateChangeSet(t *testing.T) {
 		t.Fatalf("Failed to read test config, error: %s", err.Error())
 	}
 
-	whd, err := NewWebHelpDeskDestination(testConfig.Destination)
+	whd, err := NewWebHelpDeskDestination(t.Context(), testConfig.Destination)
 	if err != nil {
 		t.Fatalf("Failed to get new whd client, error: %s", err.Error())
 	}
@@ -270,7 +270,7 @@ func TestCreateChangeSet(t *testing.T) {
 		t.Fatalf("Failed to list whd users, error: %s", err.Error())
 	}
 
-	source, err := restapi.NewRestAPISource(testConfig.Source)
+	source, err := restapi.NewRestAPISource(t.Context(), testConfig.Source)
 	if err != nil {
 		t.Error(err)
 	}
@@ -298,7 +298,7 @@ func TestWebHelpDesk_CreateUser(t *testing.T) {
 		t.Fatalf("Failed to read test config, error: %s", err.Error())
 	}
 
-	whd, err := NewWebHelpDeskDestination(testConfig.Destination)
+	whd, err := NewWebHelpDeskDestination(t.Context(), testConfig.Destination)
 	if err != nil {
 		t.Fatalf("Failed to get new whd client, error: %s", err.Error())
 	}

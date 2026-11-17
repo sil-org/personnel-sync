@@ -351,7 +351,7 @@ func TestRestAPI_ListUsers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, err := NewRestAPISource(tt.sourceConfig)
+			r, err := NewRestAPISource(t.Context(), tt.sourceConfig)
 			if err != nil {
 				t.Fatalf("Failed to get new RestAPI, error: %s", err.Error())
 			}
@@ -1137,5 +1137,27 @@ func TestRestAPI_httpRequestContextCanceledDuringRetryWait(t *testing.T) {
 	res := r.httpRequest(ctx, http.MethodGet, srv.URL+"/users", "", nil)
 	require.ErrorIs(t, res.Err, context.DeadlineExceeded)
 	require.Equal(t, http.StatusTooManyRequests, res.RespCode)
+	require.Less(t, time.Since(start), 5*time.Second)
+}
+
+func TestNewRestAPISource_SalesforceTokenContextCanceled(t *testing.T) {
+	// Never respond. The server can't see the client disconnect while the request body is unread, so release the
+	// handler explicitly before srv.Close (deferred calls run last-in, first-out).
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	extraJSON, err := json.Marshal(map[string]string{"AuthType": AuthTypeSalesforceOauth, "BaseURL": srv.URL})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err = NewRestAPISource(ctx, internal.SourceConfig{Type: internal.SourceTypeRestAPI, ExtraJSON: extraJSON})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.Less(t, time.Since(start), 5*time.Second)
 }

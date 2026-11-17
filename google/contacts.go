@@ -171,7 +171,7 @@ type notesMarshal struct {
 }
 
 // NewGoogleContactsDestination creates a new GoogleContacts instance
-func NewGoogleContactsDestination(destinationConfig internal.DestinationConfig) (internal.Destination,
+func NewGoogleContactsDestination(ctx context.Context, destinationConfig internal.DestinationConfig) (internal.Destination,
 	error,
 ) {
 	if destinationConfig.Type != internal.DestinationTypeGoogleContacts {
@@ -196,7 +196,7 @@ func NewGoogleContactsDestination(destinationConfig internal.DestinationConfig) 
 	googleContacts.DestinationConfig = destinationConfig
 
 	// Initialize Client object
-	err = googleContacts.initGoogleClient()
+	err = googleContacts.initGoogleClient(ctx)
 	if err != nil {
 		return &GoogleContacts{}, err
 	}
@@ -461,7 +461,7 @@ func (g *GoogleContacts) addContact(
 //
 // Authentication requires an email address that matches an actual GMail user (e.g. a machine account)
 // that has appropriate access privileges
-func (g *GoogleContacts) initGoogleClient() error {
+func (g *GoogleContacts) initGoogleClient(ctx context.Context) error {
 	googleAuthJson, err := json.Marshal(g.GoogleConfig.GoogleAuth)
 	if err != nil {
 		return fmt.Errorf("unable to marshal google auth data into json, error: %s", err)
@@ -473,7 +473,7 @@ func (g *GoogleContacts) initGoogleClient() error {
 	}
 
 	config.Subject = g.GoogleConfig.DelegatedAdminEmail
-	g.Client = *config.Client(context.Background())
+	g.Client = *config.Client(ctx)
 
 	return nil
 }

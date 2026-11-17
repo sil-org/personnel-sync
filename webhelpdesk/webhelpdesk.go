@@ -42,7 +42,7 @@ type WebHelpDesk struct {
 	DestinationConfig    internal.DestinationConfig `json:"-"`
 }
 
-func NewWebHelpDeskDestination(destinationConfig internal.DestinationConfig) (internal.Destination, error) {
+func NewWebHelpDeskDestination(ctx context.Context, destinationConfig internal.DestinationConfig) (internal.Destination, error) {
 	var webHelpDesk WebHelpDesk
 
 	err := json.Unmarshal(destinationConfig.ExtraJSON, &webHelpDesk)

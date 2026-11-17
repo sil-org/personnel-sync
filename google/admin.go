@@ -12,7 +12,7 @@ import (
 )
 
 // initGoogleAdminService authenticates with the Google API and returns an admin.Service that has the requested scopes
-func initGoogleAdminService(auth GoogleAuth, adminEmail string, scopes ...string) (admin.Service, error) {
+func initGoogleAdminService(ctx context.Context, auth GoogleAuth, adminEmail string, scopes ...string) (admin.Service, error) {
 	googleAuthJson, err := json.Marshal(auth)
 	if err != nil {
 		return admin.Service{}, fmt.Errorf("unable to marshal google auth data into json, error: %s", err.Error())
@@ -23,7 +23,6 @@ func initGoogleAdminService(auth GoogleAuth, adminEmail string, scopes ...string
 		return admin.Service{}, fmt.Errorf("unable to parse client secret file to config: %s", err)
 	}
 
-	ctx := context.TODO()
 	config.Subject = adminEmail
 	client := config.Client(ctx)
 

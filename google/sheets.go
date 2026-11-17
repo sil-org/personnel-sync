@@ -29,8 +29,8 @@ type SheetsSyncSet struct {
 	CompareAttribute string
 }
 
-func NewGoogleSheetsDestination(destinationConfig internal.DestinationConfig) (internal.Destination, error) {
-	s, err := readConfig(destinationConfig.ExtraJSON)
+func NewGoogleSheetsDestination(ctx context.Context, destinationConfig internal.DestinationConfig) (internal.Destination, error) {
+	s, err := readConfig(ctx, destinationConfig.ExtraJSON)
 	if err != nil {
 		return nil, fmt.Errorf("error reading GoogleSheets destination config: %s", err)
 	}
@@ -40,8 +40,8 @@ func NewGoogleSheetsDestination(destinationConfig internal.DestinationConfig) (i
 	return &s, nil
 }
 
-func NewGoogleSheetsSource(sourceConfig internal.SourceConfig) (internal.Source, error) {
-	s, err := readConfig(sourceConfig.ExtraJSON)
+func NewGoogleSheetsSource(ctx context.Context, sourceConfig internal.SourceConfig) (internal.Source, error) {
+	s, err := readConfig(ctx, sourceConfig.ExtraJSON)
 	if err != nil {
 		return nil, fmt.Errorf("error reading GoogleSheets source config: %s", err)
 	}
@@ -50,7 +50,7 @@ func NewGoogleSheetsSource(sourceConfig internal.SourceConfig) (internal.Source,
 	return &s, nil
 }
 
-func readConfig(data []byte) (GoogleSheets, error) {
+func readConfig(ctx context.Context, data []byte) (GoogleSheets, error) {
 	var s GoogleSheets
 
 	err := json.Unmarshal(data, &s.GoogleConfig)
@@ -59,6 +59,7 @@ func readConfig(data []byte) (GoogleSheets, error) {
 	}
 
 	s.Service, err = initSheetsService(
+		ctx,
 		s.GoogleConfig.GoogleAuth,
 		s.GoogleConfig.DelegatedAdminEmail,
 		sheets.SpreadsheetsScope,
@@ -69,7 +70,7 @@ func readConfig(data []byte) (GoogleSheets, error) {
 	return s, nil
 }
 
-func initSheetsService(auth GoogleAuth, adminEmail string, scopes ...string) (*sheets.Service, error) {
+func initSheetsService(ctx context.Context, auth GoogleAuth, adminEmail string, scopes ...string) (*sheets.Service, error) {
 	googleAuthJson, err := json.Marshal(auth)
 	if err != nil {
 		return nil, fmt.Errorf("unable to marshal google auth data into json, error: %s", err.Error())
@@ -82,7 +83,6 @@ func initSheetsService(auth GoogleAuth, adminEmail string, scopes ...string) (*s
 
 	config.Subject = adminEmail
 
-	ctx := context.Background()
 	svc, err := sheets.NewService(ctx, option.WithHTTPClient(config.Client(ctx)))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create sheets service, error: %s", err)

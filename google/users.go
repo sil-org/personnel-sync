@@ -26,7 +26,7 @@ type GoogleUsers struct {
 	AdminService      admin.Service
 }
 
-func NewGoogleUsersDestination(destinationConfig internal.DestinationConfig) (internal.Destination, error) {
+func NewGoogleUsersDestination(ctx context.Context, destinationConfig internal.DestinationConfig) (internal.Destination, error) {
 	var googleUsers GoogleUsers
 	// Unmarshal ExtraJSON into GoogleConfig struct
 	err := json.Unmarshal(destinationConfig.ExtraJSON, &googleUsers.GoogleConfig)
@@ -46,6 +46,7 @@ func NewGoogleUsersDestination(destinationConfig internal.DestinationConfig) (in
 
 	// Initialize AdminService object
 	googleUsers.AdminService, err = initGoogleAdminService(
+		ctx,
 		googleUsers.GoogleConfig.GoogleAuth,
 		googleUsers.GoogleConfig.DelegatedAdminEmail,
 		admin.AdminDirectoryUserScope,

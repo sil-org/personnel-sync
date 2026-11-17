@@ -74,7 +74,7 @@ func TestNewGoogleSheetsDestination(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewGoogleSheetsDestination(tt.destinationConfig)
+			got, err := NewGoogleSheetsDestination(t.Context(), tt.destinationConfig)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("error expected, but didn't happen")
@@ -153,7 +153,7 @@ func TestNewGoogleSheetsSource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewGoogleSheetsSource(tt.sourceConfig)
+			got, err := NewGoogleSheetsSource(t.Context(), tt.sourceConfig)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("error expected, but didn't happen")
