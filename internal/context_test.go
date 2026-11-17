@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"testing"
 	"time"
@@ -66,4 +67,15 @@ func TestRunSyncSet_Interrupted(t *testing.T) {
 	err := RunSyncSet(ctx, log.New(&bytes.Buffer{}, "", 0), src, dst, cfg)
 	require.ErrorIs(t, err, cause)
 	require.ErrorContains(t, err, "changes may be incomplete")
+}
+
+func TestSyncError_Unwrap(t *testing.T) {
+	inner := errors.New("inner")
+	err := fmt.Errorf("outer: %w", SyncError{Message: fmt.Errorf("middle: %w", inner), SendAlert: true})
+
+	require.ErrorIs(t, err, inner)
+
+	syncErr, ok := errors.AsType[SyncError](err)
+	require.True(t, ok)
+	require.True(t, syncErr.SendAlert)
 }

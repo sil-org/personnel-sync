@@ -110,3 +110,8 @@ type SyncError struct {
 func (s SyncError) Error() string {
 	return s.Message.Error()
 }
+
+// Unwrap returns the underlying error, so that errors.Is and errors.As (and error reporting such as Sentry) can see it.
+func (s SyncError) Unwrap() error {
+	return s.Message
+}

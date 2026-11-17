@@ -218,7 +218,6 @@ func TestGoogleGroups_ApplyChangeSetCanceled(t *testing.T) {
 	require.Zero(t, requests.Load(), "no requests should be sent after ctx is canceled")
 
 	_, err = g.ListUsers(ctx, []string{"Email"})
-	// SyncError doesn't implement Unwrap, so check the message rather than errors.Is
-	require.ErrorContains(t, err, context.Canceled.Error())
+	require.ErrorIs(t, err, context.Canceled)
 	require.Zero(t, requests.Load())
 }
