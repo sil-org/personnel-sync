@@ -10,7 +10,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/sil-org/personnel-sync/v8/internal"
 )
 
 const DefaultSheetName = "Sheet1"
@@ -29,8 +29,8 @@ type SheetsSyncSet struct {
 	CompareAttribute string
 }
 
-func NewGoogleSheetsDestination(destinationConfig internal.DestinationConfig) (internal.Destination, error) {
-	s, err := readConfig(destinationConfig.ExtraJSON)
+func NewGoogleSheetsDestination(ctx context.Context, destinationConfig internal.DestinationConfig) (internal.Destination, error) {
+	s, err := readConfig(ctx, destinationConfig.ExtraJSON)
 	if err != nil {
 		return nil, fmt.Errorf("error reading GoogleSheets destination config: %s", err)
 	}
@@ -40,8 +40,8 @@ func NewGoogleSheetsDestination(destinationConfig internal.DestinationConfig) (i
 	return &s, nil
 }
 
-func NewGoogleSheetsSource(sourceConfig internal.SourceConfig) (internal.Source, error) {
-	s, err := readConfig(sourceConfig.ExtraJSON)
+func NewGoogleSheetsSource(ctx context.Context, sourceConfig internal.SourceConfig) (internal.Source, error) {
+	s, err := readConfig(ctx, sourceConfig.ExtraJSON)
 	if err != nil {
 		return nil, fmt.Errorf("error reading GoogleSheets source config: %s", err)
 	}
@@ -50,7 +50,7 @@ func NewGoogleSheetsSource(sourceConfig internal.SourceConfig) (internal.Source,
 	return &s, nil
 }
 
-func readConfig(data []byte) (GoogleSheets, error) {
+func readConfig(ctx context.Context, data []byte) (GoogleSheets, error) {
 	var s GoogleSheets
 
 	err := json.Unmarshal(data, &s.GoogleConfig)
@@ -59,6 +59,7 @@ func readConfig(data []byte) (GoogleSheets, error) {
 	}
 
 	s.Service, err = initSheetsService(
+		ctx,
 		s.GoogleConfig.GoogleAuth,
 		s.GoogleConfig.DelegatedAdminEmail,
 		sheets.SpreadsheetsScope,
@@ -69,7 +70,7 @@ func readConfig(data []byte) (GoogleSheets, error) {
 	return s, nil
 }
 
-func initSheetsService(auth GoogleAuth, adminEmail string, scopes ...string) (*sheets.Service, error) {
+func initSheetsService(ctx context.Context, auth GoogleAuth, adminEmail string, scopes ...string) (*sheets.Service, error) {
 	googleAuthJson, err := json.Marshal(auth)
 	if err != nil {
 		return nil, fmt.Errorf("unable to marshal google auth data into json, error: %s", err.Error())
@@ -82,8 +83,9 @@ func initSheetsService(auth GoogleAuth, adminEmail string, scopes ...string) (*s
 
 	config.Subject = adminEmail
 
-	ctx := context.Background()
-	svc, err := sheets.NewService(ctx, option.WithHTTPClient(config.Client(ctx)))
+	// The token client deliberately ignores ctx cancellation. Once ApplyChangeSet starts writing, it continues even if
+	// ctx is canceled, and those writes may need to refresh the token.
+	svc, err := sheets.NewService(ctx, option.WithHTTPClient(config.Client(context.WithoutCancel(ctx))))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create sheets service, error: %s", err)
 	}
@@ -107,14 +109,14 @@ func (g *GoogleSheets) ForSet(syncSetJson json.RawMessage) error {
 	return nil
 }
 
-func (g *GoogleSheets) ListUsers(desiredAttrs []string) ([]internal.Person, error) {
+func (g *GoogleSheets) ListUsers(ctx context.Context, desiredAttrs []string) ([]internal.Person, error) {
 	if g.DestinationConfig.Type != "" {
 		// if this sheet is a destination, don't return the list of users since we don't have logic to do incremental
 		// updates to the sheet
 		return nil, nil
 	}
 
-	sheetData, err := g.readSheet()
+	sheetData, err := g.readSheet(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("googleSheets ListUsers error %w", err)
 	}
@@ -155,6 +157,7 @@ func getPersonsFromSheetData(sheetData [][]any, desiredAttrs []string, compareAt
 }
 
 func (g *GoogleSheets) ApplyChangeSet(
+	ctx context.Context,
 	changes internal.ChangeSet,
 	eventLog chan<- internal.EventLogItem,
 ) internal.ChangeResults {
@@ -166,7 +169,14 @@ func (g *GoogleSheets) ApplyChangeSet(
 		return internal.ChangeResults{}
 	}
 
-	sheetData, err := g.readSheet()
+	// Replacing the sheet's contents takes separate clear and write requests, and stopping between them (or during the
+	// clear) would leave the sheet empty. So don't start if ctx is already done, but once started, finish regardless.
+	if ctx.Err() != nil {
+		return internal.ChangeResults{}
+	}
+	ctx = context.WithoutCancel(ctx)
+
+	sheetData, err := g.readSheet(ctx)
 	if err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ALERT,
@@ -175,7 +185,7 @@ func (g *GoogleSheets) ApplyChangeSet(
 		return internal.ChangeResults{}
 	}
 
-	if err := g.clearSheet(sheetData); err != nil {
+	if err := g.clearSheet(ctx, sheetData); err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ALERT,
 			Message: fmt.Sprintf("unable to clear sheet, error: %v", err),
@@ -183,7 +193,7 @@ func (g *GoogleSheets) ApplyChangeSet(
 		return internal.ChangeResults{}
 	}
 
-	if err := g.updateSheet(getHeaderFromSheetData(sheetData), changes.Create); err != nil {
+	if err := g.updateSheet(ctx, getHeaderFromSheetData(sheetData), changes.Create); err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ALERT,
 			Message: fmt.Sprintf("unable to update sheet, error: %v", err),
@@ -194,9 +204,9 @@ func (g *GoogleSheets) ApplyChangeSet(
 	return internal.ChangeResults{Created: uint64(len(changes.Create))}
 }
 
-func (g *GoogleSheets) readSheet() ([][]any, error) {
+func (g *GoogleSheets) readSheet(ctx context.Context) ([][]any, error) {
 	readRange := fmt.Sprintf("%s!A1:ZZ", g.SheetsSyncSet.SheetName)
-	resp, err := g.Service.Spreadsheets.Values.Get(g.SheetsSyncSet.SheetID, readRange).Do()
+	resp, err := g.Service.Spreadsheets.Values.Get(g.SheetsSyncSet.SheetID, readRange).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("unable to retrieve data from sheet '%s', error: %v", g.SheetsSyncSet.SheetName, err)
 	}
@@ -218,7 +228,7 @@ func getHeaderFromSheetData(sheetData [][]any) map[int]string {
 	return header
 }
 
-func (g *GoogleSheets) clearSheet(data [][]any) error {
+func (g *GoogleSheets) clearSheet(ctx context.Context, data [][]any) error {
 	for i, row := range data {
 		if i == 0 {
 			continue
@@ -234,14 +244,14 @@ func (g *GoogleSheets) clearSheet(data [][]any) error {
 	updateRange := fmt.Sprintf("%s!A1", g.SheetsSyncSet.SheetName)
 	_, err := g.Service.Spreadsheets.Values.
 		Update(g.SheetsSyncSet.SheetID, updateRange, v).
-		ValueInputOption("RAW").Do()
+		ValueInputOption("RAW").Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("unable to clear sheet, error: %v", err)
 	}
 	return nil
 }
 
-func (g *GoogleSheets) updateSheet(header map[int]string, persons []internal.Person) error {
+func (g *GoogleSheets) updateSheet(ctx context.Context, header map[int]string, persons []internal.Person) error {
 	table := makeSheetDataFromPersons(header, persons)
 	v := &sheets.ValueRange{
 		Values: table,
@@ -250,7 +260,7 @@ func (g *GoogleSheets) updateSheet(header map[int]string, persons []internal.Per
 	updateRange := fmt.Sprintf("%s!A2:ZZ", g.SheetsSyncSet.SheetName)
 	_, err := g.Service.Spreadsheets.Values.
 		Update(g.SheetsSyncSet.SheetID, updateRange, v).
-		ValueInputOption("RAW").Do()
+		ValueInputOption("RAW").Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("unable to update sheet, error: %v", err)
 	}

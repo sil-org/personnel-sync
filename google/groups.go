@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/syslog"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -14,7 +15,7 @@ import (
 	admin "google.golang.org/api/admin/directory/v1"
 	"google.golang.org/api/googleapi"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/sil-org/personnel-sync/v8/internal"
 )
 
 const (
@@ -39,7 +40,7 @@ type GroupSyncSet struct {
 	DisableDelete bool
 }
 
-func NewGoogleGroupsDestination(destinationConfig internal.DestinationConfig) (internal.Destination, error) {
+func NewGoogleGroupsDestination(ctx context.Context, destinationConfig internal.DestinationConfig) (internal.Destination, error) {
 	var googleGroups GoogleGroups
 	// Unmarshal ExtraJSON into GoogleGroupsConfig struct
 	err := json.Unmarshal(destinationConfig.ExtraJSON, &googleGroups.GoogleConfig)
@@ -57,6 +58,7 @@ func NewGoogleGroupsDestination(destinationConfig internal.DestinationConfig) (i
 
 	// Initialize AdminService object
 	googleGroups.AdminService, err = initGoogleAdminService(
+		ctx,
 		googleGroups.GoogleConfig.GoogleAuth,
 		googleGroups.GoogleConfig.DelegatedAdminEmail,
 		admin.AdminDirectoryGroupScope,
@@ -88,10 +90,10 @@ func (g *GoogleGroups) ForSet(syncSetJson json.RawMessage) error {
 	return nil
 }
 
-func (g *GoogleGroups) ListUsers(desiredAttrs []string) ([]internal.Person, error) {
+func (g *GoogleGroups) ListUsers(ctx context.Context, desiredAttrs []string) ([]internal.Person, error) {
 	var membersList []*admin.Member
 	membersListCall := g.AdminService.Members.List(g.GroupSyncSet.GroupEmail)
-	err := membersListCall.Pages(context.TODO(), func(members *admin.Members) error {
+	err := membersListCall.Pages(ctx, func(members *admin.Members) error {
 		membersList = append(membersList, members.Members...)
 		return nil
 	})
@@ -128,6 +130,7 @@ func (g *GoogleGroups) ListUsers(desiredAttrs []string) ([]internal.Person, erro
 }
 
 func (g *GoogleGroups) ApplyChangeSet(
+	ctx context.Context,
 	changes internal.ChangeSet,
 	eventLog chan<- internal.EventLogItem,
 ) internal.ChangeResults {
@@ -153,22 +156,22 @@ func (g *GoogleGroups) ApplyChangeSet(
 	batchTimer := internal.NewBatchTimer(g.BatchSize, g.BatchDelaySeconds)
 
 	if !g.GroupSyncSet.DisableAdd {
-		for email, role := range toBeCreated {
+		for email, role := range internal.UntilDone(ctx, maps.All(toBeCreated)) {
 			wg.Add(1)
-			go g.addMember(email, role, &results.Created, &wg, eventLog)
-			batchTimer.WaitOnBatch()
+			go g.addMember(ctx, email, role, &results.Created, &wg, eventLog)
+			batchTimer.WaitOnBatch(ctx)
 		}
 	}
 
 	if !g.GroupSyncSet.DisableDelete {
-		for _, dp := range changes.Delete {
+		for _, dp := range internal.UntilDone(ctx, slices.All(changes.Delete)) {
 			// Do not delete ExtraMembers
 			if g.isExtraMember(dp.CompareValue) {
 				continue
 			}
 			wg.Add(1)
-			go g.removeMember(dp.CompareValue, &results.Deleted, &wg, eventLog)
-			batchTimer.WaitOnBatch()
+			go g.removeMember(ctx, dp.CompareValue, &results.Deleted, &wg, eventLog)
+			batchTimer.WaitOnBatch(ctx)
 		}
 	}
 
@@ -190,6 +193,7 @@ func (g *GoogleGroups) isFoundExtraMember(email string) bool {
 }
 
 func (g *GoogleGroups) addMember(
+	ctx context.Context,
 	email, role string,
 	counter *uint64,
 	wg *sync.WaitGroup,
@@ -202,7 +206,7 @@ func (g *GoogleGroups) addMember(
 		Email: email,
 	}
 
-	_, err := g.AdminService.Members.Insert(g.GroupSyncSet.GroupEmail, &newMember).Do()
+	_, err := g.AdminService.Members.Insert(g.GroupSyncSet.GroupEmail, &newMember).Context(ctx).Do()
 	if err != nil && !strings.Contains(err.Error(), "409") { // error code 409 is for existing user
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ERR,
@@ -220,6 +224,7 @@ func (g *GoogleGroups) addMember(
 }
 
 func (g *GoogleGroups) removeMember(
+	ctx context.Context,
 	email string,
 	counter *uint64,
 	wg *sync.WaitGroup,
@@ -227,7 +232,7 @@ func (g *GoogleGroups) removeMember(
 ) {
 	defer wg.Done()
 
-	err := g.AdminService.Members.Delete(g.GroupSyncSet.GroupEmail, email).Do()
+	err := g.AdminService.Members.Delete(g.GroupSyncSet.GroupEmail, email).Context(ctx).Do()
 	if err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ERR,

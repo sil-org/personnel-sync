@@ -7,12 +7,13 @@ import (
 	"fmt"
 	"log/syslog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/sil-org/personnel-sync/v8/internal"
 
 	admin "google.golang.org/api/admin/directory/v1"
 	"google.golang.org/api/googleapi"
@@ -26,7 +27,7 @@ type GoogleUsers struct {
 	AdminService      admin.Service
 }
 
-func NewGoogleUsersDestination(destinationConfig internal.DestinationConfig) (internal.Destination, error) {
+func NewGoogleUsersDestination(ctx context.Context, destinationConfig internal.DestinationConfig) (internal.Destination, error) {
 	var googleUsers GoogleUsers
 	// Unmarshal ExtraJSON into GoogleConfig struct
 	err := json.Unmarshal(destinationConfig.ExtraJSON, &googleUsers.GoogleConfig)
@@ -46,6 +47,7 @@ func NewGoogleUsersDestination(destinationConfig internal.DestinationConfig) (in
 
 	// Initialize AdminService object
 	googleUsers.AdminService, err = initGoogleAdminService(
+		ctx,
 		googleUsers.GoogleConfig.GoogleAuth,
 		googleUsers.GoogleConfig.DelegatedAdminEmail,
 		admin.AdminDirectoryUserScope,
@@ -190,12 +192,12 @@ func setStringFromInterface(i any, m map[string]string, key string) {
 	}
 }
 
-func (g *GoogleUsers) ListUsers(desiredAttrs []string) ([]internal.Person, error) {
+func (g *GoogleUsers) ListUsers(ctx context.Context, desiredAttrs []string) ([]internal.Person, error) {
 	var usersList []*admin.User
 	usersListCall := g.AdminService.Users.List()
 	usersListCall.Customer("my_customer") // query all domains in this GSuite
 	usersListCall.Projection("full")      // include custom fields
-	err := usersListCall.Pages(context.TODO(), func(users *admin.Users) error {
+	err := usersListCall.Pages(ctx, func(users *admin.Users) error {
 		usersList = append(usersList, users.Users...)
 		return nil
 	})
@@ -220,6 +222,7 @@ func (g *GoogleUsers) ListUsers(desiredAttrs []string) ([]internal.Person, error
 }
 
 func (g *GoogleUsers) ApplyChangeSet(
+	ctx context.Context,
 	changes internal.ChangeSet,
 	eventLog chan<- internal.EventLogItem,
 ) internal.ChangeResults {
@@ -230,10 +233,10 @@ func (g *GoogleUsers) ApplyChangeSet(
 	batchTimer := internal.NewBatchTimer(g.BatchSize, g.BatchDelaySeconds)
 
 	if !g.DestinationConfig.DisableUpdate {
-		for _, toUpdate := range changes.Update {
+		for _, toUpdate := range internal.UntilDone(ctx, slices.All(changes.Update)) {
 			wg.Add(1)
-			go g.updateUser(toUpdate, &results.Updated, &wg, eventLog)
-			batchTimer.WaitOnBatch()
+			go g.updateUser(ctx, toUpdate, &results.Updated, &wg, eventLog)
+			batchTimer.WaitOnBatch(ctx)
 		}
 	}
 
@@ -335,6 +338,7 @@ func beforeDelim(s string) string {
 }
 
 func (g *GoogleUsers) updateUser(
+	ctx context.Context,
 	person internal.Person,
 	counter *uint64,
 	wg *sync.WaitGroup,
@@ -344,7 +348,7 @@ func (g *GoogleUsers) updateUser(
 
 	email := person.Attributes["email"]
 
-	oldUser, err := g.getUser(person.CompareValue)
+	oldUser, err := g.getUser(ctx, person.CompareValue)
 	if err != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ERR,
@@ -362,7 +366,7 @@ func (g *GoogleUsers) updateUser(
 		return
 	}
 
-	_, err3 := g.AdminService.Users.Update(email, &newUser).Do()
+	_, err3 := g.AdminService.Users.Update(email, &newUser).Context(ctx).Do()
 	if err3 != nil {
 		eventLog <- internal.EventLogItem{
 			Level:   syslog.LOG_ERR,
@@ -379,9 +383,9 @@ func (g *GoogleUsers) updateUser(
 	atomic.AddUint64(counter, 1)
 }
 
-func (g *GoogleUsers) getUser(email string) (admin.User, error) {
+func (g *GoogleUsers) getUser(ctx context.Context, email string) (admin.User, error) {
 	userCall := g.AdminService.Users.Get(email)
-	user, err := userCall.Do()
+	user, err := userCall.Context(ctx).Do()
 	if err != nil || user == nil {
 		return admin.User{}, err
 	}

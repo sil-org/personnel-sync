@@ -10,8 +10,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
-	"github.com/sil-org/personnel-sync/v7/restapi"
+	"github.com/sil-org/personnel-sync/v8/internal"
+	"github.com/sil-org/personnel-sync/v8/restapi"
 )
 
 func TestWebHelpDesk_ListUsers(t *testing.T) {
@@ -230,11 +230,11 @@ func TestWebHelpDesk_ListUsers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w, err := NewWebHelpDeskDestination(tt.fields.DestinationConfig)
+			w, err := NewWebHelpDeskDestination(t.Context(), tt.fields.DestinationConfig)
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := w.ListUsers([]string{})
+			got, err := w.ListUsers(t.Context(), []string{})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("WebHelpDesk.ListUsers() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -260,22 +260,22 @@ func TestCreateChangeSet(t *testing.T) {
 		t.Fatalf("Failed to read test config, error: %s", err.Error())
 	}
 
-	whd, err := NewWebHelpDeskDestination(testConfig.Destination)
+	whd, err := NewWebHelpDeskDestination(t.Context(), testConfig.Destination)
 	if err != nil {
 		t.Fatalf("Failed to get new whd client, error: %s", err.Error())
 	}
 
-	users, err := whd.ListUsers([]string{})
+	users, err := whd.ListUsers(t.Context(), []string{})
 	if err != nil {
 		t.Fatalf("Failed to list whd users, error: %s", err.Error())
 	}
 
-	source, err := restapi.NewRestAPISource(testConfig.Source)
+	source, err := restapi.NewRestAPISource(t.Context(), testConfig.Source)
 	if err != nil {
 		t.Error(err)
 	}
 
-	sourcePeople, _ := source.ListUsers([]string{"email"})
+	sourcePeople, _ := source.ListUsers(t.Context(), []string{"email"})
 	log.Printf("found %v people in source", len(sourcePeople))
 
 	logger := log.New(os.Stdout, "", 0)
@@ -298,7 +298,7 @@ func TestWebHelpDesk_CreateUser(t *testing.T) {
 		t.Fatalf("Failed to read test config, error: %s", err.Error())
 	}
 
-	whd, err := NewWebHelpDeskDestination(testConfig.Destination)
+	whd, err := NewWebHelpDeskDestination(t.Context(), testConfig.Destination)
 	if err != nil {
 		t.Fatalf("Failed to get new whd client, error: %s", err.Error())
 	}
@@ -319,7 +319,7 @@ func TestWebHelpDesk_CreateUser(t *testing.T) {
 	}
 
 	eventLog := make(chan internal.EventLogItem, 50)
-	changeResults := whd.ApplyChangeSet(changeSet, eventLog)
+	changeResults := whd.ApplyChangeSet(t.Context(), changeSet, eventLog)
 	close(eventLog)
 	log.Println(changeResults)
 

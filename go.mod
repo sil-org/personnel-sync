@@ -1,4 +1,4 @@
-module github.com/sil-org/personnel-sync/v7
+module github.com/sil-org/personnel-sync/v8
 
 go 1.26.9
 

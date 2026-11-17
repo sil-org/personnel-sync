@@ -1,11 +1,19 @@
 package google
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"sync"
 	"testing"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/api/option"
+	"google.golang.org/api/sheets/v4"
+
+	"github.com/sil-org/personnel-sync/v8/internal"
 )
 
 func TestNewGoogleSheetsDestination(t *testing.T) {
@@ -74,7 +82,7 @@ func TestNewGoogleSheetsDestination(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewGoogleSheetsDestination(tt.destinationConfig)
+			got, err := NewGoogleSheetsDestination(t.Context(), tt.destinationConfig)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("error expected, but didn't happen")
@@ -153,7 +161,7 @@ func TestNewGoogleSheetsSource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewGoogleSheetsSource(tt.sourceConfig)
+			got, err := NewGoogleSheetsSource(t.Context(), tt.sourceConfig)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("error expected, but didn't happen")
@@ -370,4 +378,66 @@ func Test_makeSheetDataFromPersons(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGoogleSheets_ApplyChangeSetCancellation(t *testing.T) {
+	// newServer fakes the Sheets API: GET returns a header and one data row, and each PUT (values update) is recorded.
+	// onPut, if set, runs during each PUT.
+	newServer := func(t *testing.T, onPut func()) (*GoogleSheets, *[]string) {
+		var mu sync.Mutex
+		var puts []string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				_, _ = w.Write([]byte(`{"values": [["email"], ["old@example.com"]]}`))
+			case http.MethodPut:
+				if onPut != nil {
+					onPut()
+				}
+				mu.Lock()
+				puts = append(puts, r.URL.Path)
+				mu.Unlock()
+				_, _ = w.Write([]byte(`{}`))
+			default:
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+		}))
+		t.Cleanup(srv.Close)
+
+		svc, err := sheets.NewService(t.Context(), option.WithEndpoint(srv.URL), option.WithHTTPClient(srv.Client()))
+		require.NoError(t, err)
+		return &GoogleSheets{
+			Service:       svc,
+			SheetsSyncSet: SheetsSyncSet{SheetID: "sheet-id", SheetName: "Sheet1", CompareAttribute: "email"},
+		}, &puts
+	}
+	changes := internal.ChangeSet{Create: []internal.Person{
+		{CompareValue: "new@example.com", Attributes: map[string]string{"email": "new@example.com"}},
+	}}
+
+	t.Run("canceled before starting makes no changes", func(t *testing.T) {
+		g, puts := newServer(t, nil)
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		eventLog := make(chan internal.EventLogItem, 10)
+		results := g.ApplyChangeSet(ctx, changes, eventLog)
+		require.Equal(t, internal.ChangeResults{}, results)
+		require.Empty(t, *puts)
+	})
+
+	t.Run("canceled during clear still writes the new rows", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		g, puts := newServer(t, cancel) // cancel while the first PUT (the clear) is in flight
+
+		eventLog := make(chan internal.EventLogItem, 10)
+		results := g.ApplyChangeSet(ctx, changes, eventLog)
+		close(eventLog)
+		for item := range eventLog {
+			t.Errorf("unexpected event: %v", item)
+		}
+		require.Equal(t, internal.ChangeResults{Created: 1}, results)
+		require.Len(t, *puts, 2, "both the clear and the write should be sent")
+	})
 }

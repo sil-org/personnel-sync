@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/sil-org/personnel-sync/v8/internal"
 )
 
 func TestNewGoogleContactsDestination(t *testing.T) {
@@ -80,7 +80,7 @@ func TestNewGoogleContactsDestination(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewGoogleContactsDestination(tt.destinationConfig)
+			got, err := NewGoogleContactsDestination(t.Context(), tt.destinationConfig)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("error expected, but didn't happen")

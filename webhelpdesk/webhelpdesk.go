@@ -1,18 +1,20 @@
 package webhelpdesk
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/syslog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 
-	"github.com/sil-org/personnel-sync/v7/internal"
+	"github.com/sil-org/personnel-sync/v8/internal"
 )
 
 const (
@@ -41,7 +43,7 @@ type WebHelpDesk struct {
 	DestinationConfig    internal.DestinationConfig `json:"-"`
 }
 
-func NewWebHelpDeskDestination(destinationConfig internal.DestinationConfig) (internal.Destination, error) {
+func NewWebHelpDeskDestination(ctx context.Context, destinationConfig internal.DestinationConfig) (internal.Destination, error) {
 	var webHelpDesk WebHelpDesk
 
 	err := json.Unmarshal(destinationConfig.ExtraJSON, &webHelpDesk)
@@ -71,7 +73,7 @@ func (w *WebHelpDesk) ForSet(syncSetJson json.RawMessage) error {
 	return nil
 }
 
-func (w *WebHelpDesk) ListUsers(desiredAttrs []string) ([]internal.Person, error) {
+func (w *WebHelpDesk) ListUsers(ctx context.Context, desiredAttrs []string) ([]internal.Person, error) {
 	var allClients []User
 	page := 1
 
@@ -81,7 +83,7 @@ func (w *WebHelpDesk) ListUsers(desiredAttrs []string) ([]internal.Person, error
 			"page":  fmt.Sprintf("%v", page),
 		}
 
-		listUsersResp, err := w.makeHttpRequest(ClientsAPIPath, http.MethodGet, "", additionalParams)
+		listUsersResp, err := w.makeHttpRequest(ctx, ClientsAPIPath, http.MethodGet, "", additionalParams)
 		if err != nil {
 			return []internal.Person{}, err
 		}
@@ -121,6 +123,7 @@ func (w *WebHelpDesk) ListUsers(desiredAttrs []string) ([]internal.Person, error
 }
 
 func (w *WebHelpDesk) ApplyChangeSet(
+	ctx context.Context,
 	changes internal.ChangeSet,
 	eventLog chan<- internal.EventLogItem,
 ) internal.ChangeResults {
@@ -130,16 +133,16 @@ func (w *WebHelpDesk) ApplyChangeSet(
 	// One minute per batch
 	batchTimer := internal.NewBatchTimer(w.BatchSize, w.BatchDelaySeconds)
 
-	for _, cp := range changes.Create {
+	for _, cp := range internal.UntilDone(ctx, slices.All(changes.Create)) {
 		wg.Add(1)
-		go w.CreateUser(cp, &results.Created, &wg, eventLog)
-		batchTimer.WaitOnBatch()
+		go w.CreateUser(ctx, cp, &results.Created, &wg, eventLog)
+		batchTimer.WaitOnBatch(ctx)
 	}
 
-	for _, dp := range changes.Update {
+	for _, dp := range internal.UntilDone(ctx, slices.All(changes.Update)) {
 		wg.Add(1)
-		go w.UpdateUser(dp, &results.Updated, &wg, eventLog)
-		batchTimer.WaitOnBatch()
+		go w.UpdateUser(ctx, dp, &results.Updated, &wg, eventLog)
+		batchTimer.WaitOnBatch(ctx)
 	}
 
 	// WHD API does not support deactivating or deleting users
@@ -150,6 +153,7 @@ func (w *WebHelpDesk) ApplyChangeSet(
 }
 
 func (w *WebHelpDesk) CreateUser(
+	ctx context.Context,
 	person internal.Person,
 	counter *uint64,
 	wg *sync.WaitGroup,
@@ -175,7 +179,7 @@ func (w *WebHelpDesk) CreateUser(
 		return
 	}
 
-	_, err = w.makeHttpRequest(ClientsAPIPath, http.MethodPost, string(jsonBody), map[string]string{})
+	_, err = w.makeHttpRequest(ctx, ClientsAPIPath, http.MethodPost, string(jsonBody), map[string]string{})
 	if err != nil {
 		// Since WebHelpDesk APIs are garbage, just ignore errors, but don't count as a newly created user
 		eventLog <- internal.EventLogItem{
@@ -195,6 +199,7 @@ func (w *WebHelpDesk) CreateUser(
 }
 
 func (w *WebHelpDesk) UpdateUser(
+	ctx context.Context,
 	person internal.Person,
 	counter *uint64,
 	wg *sync.WaitGroup,
@@ -221,7 +226,7 @@ func (w *WebHelpDesk) UpdateUser(
 	}
 
 	updatePath := fmt.Sprintf("%s/%v", ClientsAPIPath, newClient.ID)
-	_, err = w.makeHttpRequest(updatePath, http.MethodPut, string(jsonBody), map[string]string{})
+	_, err = w.makeHttpRequest(ctx, updatePath, http.MethodPut, string(jsonBody), map[string]string{})
 	if err != nil {
 		// Since WebHelpDesk APIs are garbage, just ignore errors, but don't count as a newly created user
 		eventLog <- internal.EventLogItem{
@@ -240,13 +245,13 @@ func (w *WebHelpDesk) UpdateUser(
 	atomic.AddUint64(counter, 1)
 }
 
-func (w *WebHelpDesk) makeHttpRequest(path, method, body string, additionalQueryParams map[string]string) ([]byte, error) {
+func (w *WebHelpDesk) makeHttpRequest(ctx context.Context, path, method, body string, additionalQueryParams map[string]string) ([]byte, error) {
 	// Create client and request
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	client := http.Client{Transport: tr}
-	req, err := http.NewRequest(method, w.URL+path, strings.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, w.URL+path, strings.NewReader(body))
 	if err != nil {
 		return []byte{}, err
 	}

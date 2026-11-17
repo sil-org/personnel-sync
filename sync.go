@@ -1,22 +1,36 @@
 package personnel_sync
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
-	"github.com/sil-org/personnel-sync/v7/alert"
-	"github.com/sil-org/personnel-sync/v7/google"
-	"github.com/sil-org/personnel-sync/v7/internal"
-	"github.com/sil-org/personnel-sync/v7/restapi"
-	"github.com/sil-org/personnel-sync/v7/webhelpdesk"
+	"github.com/sil-org/personnel-sync/v8/alert"
+	"github.com/sil-org/personnel-sync/v8/google"
+	"github.com/sil-org/personnel-sync/v8/internal"
+	"github.com/sil-org/personnel-sync/v8/restapi"
+	"github.com/sil-org/personnel-sync/v8/webhelpdesk"
 
 	"github.com/getsentry/sentry-go"
 )
 
-func RunSync(configFile string) error {
+// maxReportingMargin is the most time RunSync reserves before ctx's deadline for reporting (logging and alerts).
+const maxReportingMargin = 10 * time.Second
+
+// errReportingMargin is the cancellation cause when RunSync stops early to leave time for reporting.
+var errReportingMargin = errors.New("stopped early to leave time for reporting before the deadline")
+
+// RunSync loads the config file and runs every enabled sync set. The ctx bounds all outbound requests. If ctx has a
+// deadline (such as a Lambda timeout), RunSync stops sync work shortly before it, so that it can still log and send
+// alerts about the interrupted sync. Alerts themselves are not bound by ctx.
+func RunSync(ctx context.Context, configFile string) error {
+	ctx, cancel := withReportingMargin(ctx)
+	defer cancel()
+
 	log.SetOutput(os.Stdout)
 	log.SetFlags(0)
 	log.Printf("Personnel sync started at %s", time.Now().UTC().Format(time.RFC1123Z))
@@ -44,9 +58,9 @@ func RunSync(configFile string) error {
 	var source internal.Source
 	switch config.Source.Type {
 	case internal.SourceTypeRestAPI:
-		source, err = restapi.NewRestAPISource(config.Source)
+		source, err = restapi.NewRestAPISource(ctx, config.Source)
 	case internal.SourceTypeGoogleSheets:
-		source, err = google.NewGoogleSheetsSource(config.Source)
+		source, err = google.NewGoogleSheetsSource(ctx, config.Source)
 	default:
 		err = errors.New("unrecognized source type")
 	}
@@ -62,17 +76,17 @@ func RunSync(configFile string) error {
 	var destination internal.Destination
 	switch config.Destination.Type {
 	case internal.DestinationTypeGoogleContacts:
-		destination, err = google.NewGoogleContactsDestination(config.Destination)
+		destination, err = google.NewGoogleContactsDestination(ctx, config.Destination)
 	case internal.DestinationTypeGoogleGroups:
-		destination, err = google.NewGoogleGroupsDestination(config.Destination)
+		destination, err = google.NewGoogleGroupsDestination(ctx, config.Destination)
 	case internal.DestinationTypeGoogleSheets:
-		destination, err = google.NewGoogleSheetsDestination(config.Destination)
+		destination, err = google.NewGoogleSheetsDestination(ctx, config.Destination)
 	case internal.DestinationTypeGoogleUsers:
-		destination, err = google.NewGoogleUsersDestination(config.Destination)
+		destination, err = google.NewGoogleUsersDestination(ctx, config.Destination)
 	case internal.DestinationTypeRestAPI:
-		destination, err = restapi.NewRestAPIDestination(config.Destination)
+		destination, err = restapi.NewRestAPIDestination(ctx, config.Destination)
 	case internal.DestinationTypeWebHelpDesk:
-		destination, err = webhelpdesk.NewWebHelpDeskDestination(config.Destination)
+		destination, err = webhelpdesk.NewWebHelpDeskDestination(ctx, config.Destination)
 	default:
 		err = errors.New("unrecognized destination type")
 	}
@@ -86,10 +100,17 @@ func RunSync(configFile string) error {
 
 	maxNameLength := config.MaxSyncSetNameLength()
 	var alertError error
+	var skippedSets []string
 
 	// Iterate through SyncSets and process changes
 	for i, syncSet := range config.SyncSets {
 		if syncSet.Disable {
+			continue
+		}
+
+		// Once ctx is done, don't start any more sync sets, but note each one for the alert
+		if ctx.Err() != nil {
+			skippedSets = append(skippedSets, fmt.Sprintf("%q", syncSet.Name))
 			continue
 		}
 
@@ -112,10 +133,17 @@ func RunSync(configFile string) error {
 			alertError = handleSyncError(syncSetLogger, err, alertError)
 		}
 
-		if err = internal.RunSyncSet(syncSetLogger, source, destination, config); err != nil {
+		if err = internal.RunSyncSet(ctx, syncSetLogger, source, destination, config); err != nil {
 			err = fmt.Errorf(`Sync failed with error on syncSet "%s": %w`, syncSet.Name, err)
 			alertError = handleSyncError(syncSetLogger, err, alertError)
 		}
+	}
+
+	if len(skippedSets) > 0 {
+		err := fmt.Errorf("Sync stopped early, %d sync set(s) not run (%s): %w",
+			len(skippedSets), strings.Join(skippedSets, ", "), context.Cause(ctx))
+		log.Println(err)
+		alertError = errors.Join(alertError, err)
 	}
 
 	if alertError != nil {
@@ -125,6 +153,18 @@ func RunSync(configFile string) error {
 
 	log.Printf("Personnel sync completed at %s", time.Now().UTC().Format(time.RFC1123Z))
 	return nil
+}
+
+// withReportingMargin returns a context whose deadline is a little earlier than ctx's, leaving time to report on an
+// interrupted sync. The margin is maxReportingMargin, or a tenth of the remaining time if that is shorter. If ctx has
+// no deadline, the returned context has none either.
+func withReportingMargin(ctx context.Context) (context.Context, context.CancelFunc) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return context.WithCancel(ctx)
+	}
+	margin := min(maxReportingMargin, time.Until(deadline)/10)
+	return context.WithDeadlineCause(ctx, deadline.Add(-margin), errReportingMargin)
 }
 
 func handleSyncError(logger *log.Logger, err, alert error) error {
